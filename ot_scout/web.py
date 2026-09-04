@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .capture import interfaces
+from .frameworks import catalogue
 from .report import Analysis, build_report, collect
 from .store import Store
 
@@ -126,9 +127,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/findings":
             store = self.server.store
             return self._json({"findings": store.findings(), "kinds": store.FINDING_KINDS, "ratings": store.FINDING_RATINGS,
-                               "confidence": store.FINDING_CONFIDENCE, "horizons": store.FINDING_HORIZONS, "statuses": store.FINDING_STATUSES})
+                               "confidence": store.FINDING_CONFIDENCE, "horizons": store.FINDING_HORIZONS, "statuses": store.FINDING_STATUSES,
+                               "frameworks": catalogue()})
         if path == "/api/findings/drafts":
-            return self._json(Analysis(collect(self.server.store), False).findings)
+            return self._json(Analysis(collect(self.server.store), False).drafts)
         if path == "/api/sites":
             store = self.server.store
             return self._json({"sites": store.sites(), "checklist_items": [{"item": k, "label": l, "description": d} for k, l, d in store.CHECKLIST_ITEMS],
@@ -195,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/findings":
                 return self._json({"ok": True, "finding": self.server.store.save_finding(self._json_body())})
             if path == "/api/findings/import-drafts":
-                drafts = Analysis(collect(self.server.store), False).findings
+                drafts = Analysis(collect(self.server.store), False).drafts
                 return self._json({"ok": True, "added": self.server.store.import_draft_findings(drafts)})
             if path.startswith("/api/findings/"):
                 parts = path.strip("/").split("/")

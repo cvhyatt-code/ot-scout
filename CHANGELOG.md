@@ -2,6 +2,10 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.5.0 — 2026-09-04
+- Findings now carry framework references: IEC 62443 requirements (62443-3-3 SRs, plus 62443-2-4 practices for patching and backup/restore) and MITRE ATT&CK for ICS techniques. Every auto-drafted observation arrives with its references pre-filled from a conservative mapping (evidence gaps cite the requirement they leave unverified and no ATT&CK technique — a missing SPAN port is not an adversary behaviour); assessors edit them like any other field, with a pick-list of IDs that expands "SR 5.1" to "SR 5.1 Network segmentation" on save. Shown under each finding in the register and as a "Framework references" line per finding in the Word report. Demo findings updated. Existing databases gain the two columns automatically.
+- Fixed: "Import auto-drafted observations" imported nothing once the register had a single entry — the draft list was being replaced by the register itself. Same bug affected the demo builder.
+
 ## v0.4.30 — 2026-09-04
 - Purdue diagram redrawn so it can be read without a decoder ring. Each zone pair now has its own vertical lane (no two lines share an x), the two end dots sit inside the bands they join instead of on the boundary between bands, and the stretch through any band in between is thin and faded so "passing through" no longer looks like "stopping here". Every line carries a numbered badge that matches the row number in the zone-pair table and a numbered legend under the diagram, so the exported SVG explains itself.
 - Click a zone-pair row (or a line) to highlight that conduit and fade the others; hover previews it; click again to clear. Clicking a line scrolls the table to its row.

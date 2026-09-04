@@ -17,6 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+try:
+    from .frameworks import refs_for
+except ImportError:  # run as a script: python3 ot_scout/report.py
+    from frameworks import refs_for
+
 INK = "16212B"
 MUTED = "617181"
 BLUE = "176B87"
@@ -505,6 +510,8 @@ class Analysis:
                     "impact": "Conclusions are auditable and can be re-examined without re-collecting.",
                     "recommendation": "Keep the export with the evidence register; do not edit exported evidence files by hand.",
                     "closure": "Not applicable."})
+        for f in out:
+            f.update(refs_for(f["title"]))
         return out
 
 
@@ -796,6 +803,8 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
         d.labeled("Operational impact", f["impact"])
         d.labeled("Recommendation", f["recommendation"])
         d.labeled("Validation / closure", f["closure"])
+        if f.get("iec62443") or f.get("attack"):
+            d.labeled("Framework references", "; ".join(v for v in (f"IEC 62443: {f['iec62443']}" if f.get("iec62443") else "", f"ATT&CK for ICS: {f['attack']}" if f.get("attack") else "") if v))
 
     # 6 Roadmap ----------------------------------------------------------------------------
     d.h1("6. Remediation roadmap and final deliverable")

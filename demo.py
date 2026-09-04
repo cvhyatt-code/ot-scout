@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from ot_scout.parser import parse_ethernet  # noqa: E402
+from ot_scout.frameworks import format_refs  # noqa: E402
 from ot_scout.report import build_report, collect  # noqa: E402
 from ot_scout.store import Store  # noqa: E402
 
@@ -406,7 +407,7 @@ class Demo:
     def findings(self):
         st = self.store
         from ot_scout.report import Analysis
-        drafts = Analysis(collect(st), False).findings
+        drafts = Analysis(collect(st), False).drafts
         st.import_draft_findings(drafts)
         for f in st.findings():
             updates = {"id": f["id"], "status": "Validated"}
@@ -440,33 +441,38 @@ class Demo:
                          "evidence": "Walkdown photo 087; passive capture: 140 packets to 203.0.113.9:443 from 10.20.9.101; port Gi1/14 not shut down; no 802.1X or port security on PROC-SW2.",
                          "impact": "An internet-connected device of unknown provenance sits on the same VLAN as the filter and chemical PLCs. Any remote compromise of the camera is a foothold inside the process zone.",
                          "recommendation": "Remove the camera immediately and shut down unused switch ports; add port security or 802.1X on PROC-SW2; if plant CCTV is required, place it on a separate VLAN behind the firewall.",
-                         "closure": "Device removed; unused ports shut; port-security policy documented and verified on all OT switches."})
+                         "closure": "Device removed; unused ports shut; port-security policy documented and verified on all OT switches.",
+                         "iec62443": format_refs(["SR 5.1", "SR 5.2", "SR 1.2", "SR 7.8"]), "attack": format_refs(["T0883", "T0884", "T0886"])})
         st.save_finding({"title": "Vendor remote access to the engineering workstation has no approval workflow or session control", "kind": "Control deficiency", "rating": "High priority", "confidence": "Moderate",
                          "owner": "IT security / OT engineering", "horizon": "30-90 days", "status": "Validated", "site": "Main WTP", "assets": "WTP-EWS01; WTP-OTFW-1",
                          "condition": "The integrator holds a standing RDP path from a public address (203.0.113.34) through the OT firewall to the engineering workstation. Staff could not describe how sessions are requested, approved, time-limited or recorded.",
                          "evidence": "Firewall rule export (rule 14, any time); 35 RDP packets observed during the capture window; interview with OT engineer.",
                          "impact": "The engineering workstation can download logic to every PLC. Unmanaged vendor access is the most common initial access vector in reported water-sector incidents.",
                          "recommendation": "Route vendor access through a DMZ jump host with MFA, per-session enablement by plant staff, session recording and automatic expiry; disable rule 14.",
-                         "closure": "No direct external-to-EWS rule; vendor sessions logged with approver and duration."})
+                         "closure": "No direct external-to-EWS rule; vendor sessions logged with approver and duration.",
+                         "iec62443": format_refs(["SR 1.13", "SR 2.6", "SR 5.2", "2-4 SP.07"]), "attack": format_refs(["T0822", "T0886", "T0843"])})
         st.save_finding({"title": "Lift-station telemetry radios operate without link encryption and RTU settings are not backed up", "kind": "Control deficiency", "rating": "Moderate", "confidence": "Moderate",
                          "owner": "Operations / OT engineering", "horizon": "3-12 months", "status": "Validated", "site": "Lift Station 7", "assets": "LS-7 RTU, LS-9 RTU, PTP 450i radios, LS-9 cellular modem",
                          "condition": "DNP3 telemetry from LS-7 and LS-9 crosses licensed 900 MHz links whose encryption could not be confirmed; the LS-9 cellular backup modem reportedly retains its default management password; RTU settings were last exported in 2021.",
                          "evidence": "Radio survey; interview; RTU IIN flags showed 'device restart' and 'need time' on LS-9, suggesting an unstable or unsynchronised unit.",
                          "impact": "Spoofed or replayed DNP3 could operate pumps; an RTU failure would require rebuilding settings from memory.",
                          "recommendation": "Enable radio link encryption; change modem credentials and restrict management to the OT network; export and store RTU settings quarterly; investigate the LS-9 restart indication.",
-                         "closure": "Encryption enabled and verified; modem hardened; RTU settings archived with restore test."})
+                         "closure": "Encryption enabled and verified; modem hardened; RTU settings archived with restore test.",
+                         "iec62443": format_refs(["SR 3.1", "SR 1.6", "SR 1.5", "SR 7.3"]), "attack": format_refs(["T0830", "T0855", "T0812"])})
         st.save_finding({"title": "No continuous OT network monitoring; visibility for this assessment was created by a temporary SPAN", "kind": "Improvement opportunity", "rating": "Moderate", "confidence": "High",
                          "owner": "IT security", "horizon": "3-12 months", "status": "Validated", "site": "Main WTP",
                          "condition": "The utility has no passive OT monitoring platform, no NetFlow from OT switches and no SPAN/TAP infrastructure beyond the temporary mirror configured for this assessment.",
                          "evidence": "Site-validation checklist (configuration and log review); interview with IT network lead.",
                          "impact": "Changes such as the unknown camera or the direct enterprise-to-SCADA sessions would not be detected between assessments.",
                          "recommendation": "Make the CORE-SW1 SPAN permanent and add one on PROC-SW2; evaluate a passive OT monitoring platform fed from those SPANs with alerts into the existing SOC/SIEM.",
-                         "closure": "Permanent SPAN/TAP feeds in place; monitoring platform or equivalent detection in operation with alert routing."})
+                         "closure": "Permanent SPAN/TAP feeds in place; monitoring platform or equivalent detection in operation with alert routing.",
+                         "iec62443": format_refs(["SR 6.2", "SR 2.8"]), "attack": ""})
         st.save_finding({"title": "Historian and SCADA redundancy, backups and switch configurations are in place and tested", "kind": "Positive observation", "rating": "Positive", "confidence": "High",
                          "owner": "OT engineering", "horizon": "Not applicable", "status": "Validated", "site": "Main WTP",
                          "condition": "SCADA runs as a redundant pair; the historian, HSP PLC, chemical PLC and both managed switches have current, tested backups.",
                          "evidence": "Backup records reviewed; restore test log 2026-06-12.", "impact": "Recovery of core supervisory functions is credible.",
-                         "recommendation": "Extend the same regime to the filter PLC, HMIs, EWS and RTUs.", "closure": "Not applicable."})
+                         "recommendation": "Extend the same regime to the filter PLC, HMIs, EWS and RTUs.", "closure": "Not applicable.",
+                         "iec62443": format_refs(["SR 7.3", "SR 7.4"]), "attack": ""})
 
 
 def set_session_times(store, session_id, start, end):

@@ -246,6 +246,10 @@ class Store:
                            "support_status", "patch_status", "backup_status", "last_backup"):
                 if column not in existing:
                     db.execute(f"ALTER TABLE assets ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            existing = {r[1] for r in db.execute("PRAGMA table_info(findings)")}
+            for column in ("iec62443", "attack"):
+                if column not in existing:
+                    db.execute(f"ALTER TABLE findings ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
             db.executescript("""
             CREATE TABLE IF NOT EXISTS asset_aliases (
               mac TEXT PRIMARY KEY, asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
@@ -1282,7 +1286,7 @@ class Store:
     FINDING_STATUSES = ("Draft", "Validated", "Accepted", "Rejected", "Closed")
     FINDING_FIELDS = {"ref": 20, "title": 200, "kind": 40, "rating": 40, "confidence": 20, "owner": 200, "condition": 4000,
                       "evidence": 4000, "impact": 4000, "recommendation": 4000, "closure": 4000, "horizon": 40,
-                      "status": 20, "site": 200, "assets": 1000, "source": 60}
+                      "status": 20, "site": 200, "assets": 1000, "source": 60, "iec62443": 500, "attack": 500}
 
     def save_finding(self, values: dict) -> dict:
         self._bump()
@@ -1341,7 +1345,8 @@ class Store:
             self.save_finding({"title": draft["title"], "kind": kind, "rating": draft["rating"], "confidence": draft["confidence"],
                                "owner": draft["owner"], "condition": draft["condition"], "evidence": draft["evidence"],
                                "impact": draft["impact"], "recommendation": draft["recommendation"], "closure": draft["closure"],
-                               "horizon": horizon, "status": "Draft", "source": "OT Scout draft"})
+                               "horizon": horizon, "status": "Draft", "source": "OT Scout draft",
+                               "iec62443": draft.get("iec62443", ""), "attack": draft.get("attack", "")})
             added += 1
         return added
 

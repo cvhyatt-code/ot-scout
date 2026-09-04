@@ -495,7 +495,7 @@ class FindingsRegisterTests(unittest.TestCase):
             store.record(session, parse_ethernet(ethernet("ff:ff:ff:ff:ff:ff", "00:11:22:33:44:55", 0x0806, payload), 1.0))
             store.end_session(session)
             # drafts exist before anything is in the register, and the report falls back to them
-            drafts = Analysis(collect(store), False).findings
+            drafts = Analysis(collect(store), False).drafts
             self.assertTrue(any(d["id"] == "OBS-01" for d in drafts))
             doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
             self.assertIn("Observation summary", doc)
@@ -730,3 +730,60 @@ class DocumentedAssetTests(unittest.TestCase):
             self.assertIn("Lifecycle observations", doc)
             self.assertIn("6ES7 315-2EH14-0AB0", doc)
             self.assertIn("documented only", doc)
+
+
+class FrameworkReferenceTests(unittest.TestCase):
+    def test_every_draft_title_has_a_mapping_and_ids_resolve(self):
+        import inspect
+        import re
+        from ot_scout import frameworks, report as rpt
+        titles = set(re.findall(r'"title": "([^"]+)"', inspect.getsource(rpt.Analysis._findings)))
+        self.assertTrue(titles)
+        for title in titles:
+            self.assertIn(title, frameworks.DRAFT_MAPPING, f"no framework mapping for draft: {title}")
+        for iec, attack in frameworks.DRAFT_MAPPING.values():
+            for ref in iec:
+                self.assertIn(ref, frameworks.IEC62443, ref)
+            for ref in attack:
+                self.assertIn(ref, frameworks.ATTACK_ICS, ref)
+        self.assertEqual(frameworks.describe("SR 5.1"), "SR 5.1 Network segmentation")
+        self.assertEqual(frameworks.describe("SR 99.9"), "SR 99.9")
+        refs = frameworks.refs_for("Direct OT-to-enterprise communications bypass the industrial DMZ")
+        self.assertIn("SR 5.2 Zone boundary protection", refs["iec62443"])
+        self.assertIn("T0886 Remote Services", refs["attack"])
+
+    def test_references_survive_register_import_and_reach_the_report(self):
+        import io
+        import zipfile
+        from ot_scout.report import Analysis, build_report, collect
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "t.db"))
+            store.save_finding({"title": "Manual", "kind": "Control deficiency", "iec62443": "SR 5.1 Network segmentation", "attack": "T0886 Remote Services"})
+            f = store.findings()[0]
+            self.assertEqual(f["iec62443"], "SR 5.1 Network segmentation")
+            self.assertEqual(f["attack"], "T0886 Remote Services")
+            # migration: an old database without the columns gains them on open
+            import sqlite3
+            old = str(Path(tmp) / "old.db")
+            Store(old)
+            with sqlite3.connect(old) as db:
+                db.execute("CREATE TABLE findings_backup AS SELECT * FROM findings")
+                db.execute("DROP TABLE findings")
+                db.execute("""CREATE TABLE findings (id INTEGER PRIMARY KEY, ref TEXT NOT NULL DEFAULT '', title TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'Evidence gap', rating TEXT NOT NULL DEFAULT 'Moderate', confidence TEXT NOT NULL DEFAULT 'Moderate',
+                    owner TEXT NOT NULL DEFAULT '', condition TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL DEFAULT '', impact TEXT NOT NULL DEFAULT '',
+                    recommendation TEXT NOT NULL DEFAULT '', closure TEXT NOT NULL DEFAULT '', horizon TEXT NOT NULL DEFAULT '30-90 days',
+                    status TEXT NOT NULL DEFAULT 'Draft', site TEXT NOT NULL DEFAULT '', assets TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'Assessor',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+            reopened = Store(old)
+            reopened.save_finding({"title": "After migration", "iec62443": "SR 7.8 Control system component inventory"})
+            self.assertEqual(reopened.findings()[0]["iec62443"], "SR 7.8 Control system component inventory")
+            # drafts carry references and the docx prints them
+            drafts = Analysis(collect(store), False).drafts
+            self.assertTrue(any(d.get("iec62443") for d in drafts))
+            store.import_draft_findings(drafts)
+            imported = [f for f in store.findings() if f["source"] == "OT Scout draft"]
+            self.assertTrue(any(f["iec62443"] for f in imported))
+            doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
+            self.assertIn("Framework references", doc)
+            self.assertIn("SR 5.1 Network segmentation", doc)

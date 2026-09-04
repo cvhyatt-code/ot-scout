@@ -46,6 +46,7 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 
 - Import the **auto-drafted observations**. Every one is a draft: validate it, rewrite it in plain language, set rating and confidence honestly, name an owner and a horizon. Reject the ones that are not real.
 - Add your own findings from the checklist, interviews and walkdown. Positive observations belong here too.
+- Each finding carries IEC 62443 and ATT&CK for ICS references — pre-filled on the drafts, editable on everything. They are what an auditor or insurer will ask for; keep them honest (an evidence gap gets the requirement it leaves unverified, not an attack technique).
 - Confidence should reflect the evidence: a single access-port session does not support a "Confirmed" finding about what a segment talks to.
 
 ## 7. Report
