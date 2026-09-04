@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+data/
+*.db
+*.db-shm
+*.db-wal
+demo-report.docx
+demo-purdue.svg
+*.zip
+.DS_Store
