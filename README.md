@@ -21,7 +21,7 @@ Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification,
 ```bash
 git clone https://github.com/cvhyatt-code/ot-scout.git
 cd ot-scout
-python3 -m unittest discover -s tests   # 54 tests
+python3 -m unittest discover -s tests   # 73 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
 ```
 
@@ -41,11 +41,26 @@ The tabs are in engagement order; the **Assessment guide** link in the header wa
 6. **Findings** — register of findings/observations with rating, confidence, owner, horizon and status. Auto-drafted observations from the evidence are imported as drafts and validated by hand.
 7. **Report** — an executive readout (assets ranked by an itemised exposure score, fleet view by model, IEC 62443 requirements the findings bear on), a Word report (cover, executive readout, coverage, inventory, communications, zones, findings, roadmap, appendices), CSV/JSON/SVG exports and an evidence package with raw PCAPs and a SHA-256 manifest. `python3 -m ot_scout.report assessment.json report.docx` re-renders offline.
 
+## Assessment copilot (proof of concept)
+
+`copilot.py` puts a local language model on top of the assessment export. OT Scout stays the source of truth — the model is handed evidence records with stable ids (ASSET-007, REL-012, CAP-001, FND-02), must answer as structured JSON citing them, and every reply is checked for ids, IPs and MACs that were never supplied. Nothing in capture, parsing or the store is involved.
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh && ollama pull qwen2.5:7b   # once, on the analysis machine
+python3 copilot.py --database data/demo.db                 # interactive, local model, offline
+python3 copilot.py --database data/demo.db --eval          # the eight standard questions, logged
+python3 copilot.py --database data/demo.db --dry-run --ask "Why is WTP-EWS01 interesting?"   # show the prompt, call nothing
+python3 copilot.py --log-summary data/copilot-log.jsonl    # compare models: valid JSON, grounded, latency
+```
+
+Backends: `--backend ollama` (default), `llamacpp`, `openai` (needs `OPENAI_API_KEY`, or any OpenAI-compatible `--url`), `anthropic` (needs `ANTHROPIC_API_KEY`). Cloud backends are for tuning the prompt on the fictitious demo data; customer evidence stays on a local model. `--budget` trims how much evidence is sent per question (default 12,000 characters, about 3,000 tokens) — lower it on a slow CPU.
+
 ## Layout
 
 ```
 run.py                 start the web app
 demo.py                build the demonstration database
+copilot.py             assessment copilot CLI (local/cloud LLM over the evidence export)
 ot_scout/
   capture.py           raw-socket capture, PCAP import, rate limiter
   parser.py            Ethernet/IP/industrial-protocol decoders and dispatch
@@ -55,6 +70,8 @@ ot_scout/
   exposure.py          per-asset exposure score, fleet view, IEC 62443 rollup
   store.py             SQLite store, inventory/relationship/zone logic, SVG diagram
   report.py            analysis, draft findings, .docx generation (stdlib only)
+  copilot.py           evidence ids, evidence selection, constrained prompt, grounding check, log
+  llm_backends.py      Ollama / llama.cpp / OpenAI-compatible / Anthropic chat backends (urllib)
   vendor.py            IEEE OUI lookup
   web.py               HTTP server and JSON API
   static/index.html    the single-page UI

@@ -58,6 +58,12 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 - Click **Export evidence package**. The zip holds the JSON, the report, every export, every raw PCAP and a SHA-256 manifest — keep it with the engagement record; it is what you produce when a result is challenged. Verify any copy later with `sha256sum -c SHA256SUMS`.
 - Clear prototype data only after the exports are safely stored.
 
+## Copilot (proof of concept)
+
+- `python3 copilot.py --database data/<file>.db` at the end of a capture day. Ask it what to investigate first, which relationships cross a boundary without a decision, what to ask the controls engineer tomorrow, or to draft a finding from an unexpected path. It only sees evidence OT Scout already holds and must cite the record ids it used; the `[check]` line under every answer says whether every id, IP and MAC it mentioned traces back to supplied evidence. Treat an answer that fails that check as noise, and treat every answer as a suggestion — the assessor validates on site and owns the finding.
+- Customer evidence goes to a local model only (`--backend ollama`, the default). Cloud backends exist for tuning the prompt against the fictitious demo data.
+- On a slow laptop the first token can take a minute or more: the model has to read the evidence before it answers. Lower `--budget` (try 6000) for shorter prompts, or run the standard set with `--eval` while you do something else and read `data/copilot-log.jsonl` afterwards.
+
 ## Things that go wrong
 
 - Tool shows "Can't reach the OT Scout server": the app on the collection laptop has stopped or the network between you and it has changed. Check the terminal it is running in.
