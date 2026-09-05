@@ -148,6 +148,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"findings": store.findings(), "kinds": store.FINDING_KINDS, "ratings": store.FINDING_RATINGS,
                                "confidence": store.FINDING_CONFIDENCE, "horizons": store.FINDING_HORIZONS, "statuses": store.FINDING_STATUSES,
                                "frameworks": catalogue()})
+        if path == "/api/findings/for":
+            q = parse_qs(urlparse(self.path).query)
+            kind, key = (q.get("kind") or [""])[0], (q.get("key") or [""])[0]
+            return self._json({"kind": kind, "key": key, "findings": self.server.store.findings_for(kind, key)})
         if path == "/api/findings/drafts":
             return self._json(Analysis(collect(self.server.store), False).drafts)
         if path == "/api/sites":

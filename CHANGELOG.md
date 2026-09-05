@@ -2,6 +2,11 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.13.0 — 2026-09-05
+- Purdue tab: selecting a conduit (table row or diagram line) opens a drawer with the findings that cite it (rejected/superseded drafts folded away), the relationships in that zone pair with their decisions, and a "Draft finding from this conduit" button that opens the finding dialog pre-filled and pre-linked. An Unexpected conduit with no live finding is flagged in the drawer.
+- `GET /api/findings/for?kind=pair|relationship|asset&key=…` — findings citing an evidence item.
+- Finding dialog round-trips `links`, so saving from the drawer records the conduit the finding came from.
+
 ## v0.12.1 — 2026-09-05
 - `save_finding` accepts a links-only update (`{"id": …, "links": […]}`), which is what linking a finding to a conduit from the UI will send.
 - Demo shows the intended workflow on the new links: the assessor-written camera (FND-01), vendor RDP (FND-02) and cleartext-management findings are linked to their relationships, zone pairs and assets; the auto-drafts they supersede ("OT assets communicate directly with external…", "External communication pathways require policy validation") are Rejected instead of sitting in the register as duplicates.
