@@ -21,7 +21,7 @@ Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification,
 ```bash
 git clone https://github.com/<you>/ot-scout.git
 cd ot-scout
-python3 -m unittest discover -s tests   # 52 tests
+python3 -m unittest discover -s tests   # 54 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
 ```
 
@@ -39,7 +39,7 @@ The tabs are in engagement order; the **Assessment guide** link in the header wa
 4. **Communications** — deduplicated relationships (one row per pair of identities, all flows folded in), with a conduit decision on each: Approved / Tolerated / Unexpected. Broadcast and service-discovery traffic is kept separate.
 5. **Zones** — Purdue level per asset (suggested from protocol role, accepted or corrected by the assessor), a zone-pair rollup and a numbered band diagram; click a row to highlight its line. Exportable as SVG.
 6. **Findings** — register of findings/observations with rating, confidence, owner, horizon and status. Auto-drafted observations from the evidence are imported as drafts and validated by hand.
-7. **Report** — a Word report (cover, executive readout, coverage, inventory, communications, zones, findings, roadmap, appendices) plus CSV/JSON/SVG exports. `python3 -m ot_scout.report assessment.json report.docx` re-renders offline.
+7. **Report** — an executive readout (assets ranked by an itemised exposure score, fleet view by model, IEC 62443 requirements the findings bear on), a Word report (cover, executive readout, coverage, inventory, communications, zones, findings, roadmap, appendices), CSV/JSON/SVG exports and an evidence package with raw PCAPs and a SHA-256 manifest. `python3 -m ot_scout.report assessment.json report.docx` re-renders offline.
 
 ## Layout
 
@@ -52,6 +52,7 @@ ot_scout/
   opcua.py             OPC UA binary-transport decoder
   cip.py               EtherNet/IP explicit messaging (CIP Identity object) decoder
   frameworks.py        IEC 62443 / ATT&CK for ICS catalogues and draft-finding mapping
+  exposure.py          per-asset exposure score, fleet view, IEC 62443 rollup
   store.py             SQLite store, inventory/relationship/zone logic, SVG diagram
   report.py            analysis, draft findings, .docx generation (stdlib only)
   vendor.py            IEEE OUI lookup

@@ -488,6 +488,24 @@ class Store:
     def assets(self) -> list[dict]:
         return self._cached("assets", self._assets)
 
+    def assets_with_exposure(self) -> list[dict]:
+        """assets() plus exposure score, band and factors per physical asset (see exposure.py)."""
+        return self._cached("assets_exposure", self._assets_with_exposure)
+
+    def _assets_with_exposure(self) -> list[dict]:
+        from .exposure import annotate
+        base = self.assets()
+        rels = self.relationships(100000, base)
+        served: dict[int, set[int]] = {}
+        with self.connect() as db:
+            ip_to_asset = {row[0]: row[1] for row in db.execute("SELECT ip,asset_id FROM asset_ips")}
+            for ip, port in db.execute("SELECT DISTINCT dst_ip,dst_port FROM connections WHERE dst_port IN (21,23,69,80,161,5900) AND traffic_scope='Unicast'"):
+                if ip in ip_to_asset:
+                    served.setdefault(ip_to_asset[ip], set()).add(port)
+        annotated = [dict(a) for a in base]
+        annotate(annotated, rels, served, self.findings())
+        return annotated
+
     def _assets(self) -> list[dict]:
         with self.connect() as db:
             raw = [dict(row) for row in db.execute("""
@@ -1167,9 +1185,9 @@ class Store:
         return output.getvalue().encode("utf-8")
 
     def json_export(self) -> bytes:
-        assets = self.assets()
+        assets = self.assets_with_exposure()
         return json.dumps({"generated_at": iso_time(), "summary": self.dashboard(), "sessions": self.sessions(), "assets": assets,
-                           "relationships": self.relationships(100000, assets), "discovery_traffic": self.discovery_traffic(100000),
+                           "relationships": self.relationships(100000, self.assets()), "discovery_traffic": self.discovery_traffic(100000),
                            "flows": self.connections(100000), "sites": self.sites(), "findings": self.findings(), "zones": self.zone_summary(assets)}, indent=2).encode("utf-8")
 
     def vendor_status(self) -> dict:

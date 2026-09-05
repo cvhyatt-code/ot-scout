@@ -19,8 +19,10 @@ from xml.sax.saxutils import escape
 
 try:
     from .frameworks import refs_for
+    from .exposure import annotate, fleet_view, iec62443_rollup, band as exposure_band
 except ImportError:  # run as a script: python3 ot_scout/report.py
     from frameworks import refs_for
+    from exposure import annotate, fleet_view, iec62443_rollup, band as exposure_band
 
 INK = "16212B"
 MUTED = "617181"
@@ -328,6 +330,10 @@ class Analysis:
         self.local_unicast = sum(int(s.get("local_unicast") or 0) for s in self.sessions)
         self.broadcast = sum(int(s.get("broadcast_multicast") or 0) for s in self.sessions)
         self.physical = [a for a in self.assets if a.get("physical_asset")]
+        if self.physical and "exposure" not in self.physical[0]:
+            annotate(self.assets, self.relationships, None, data.get("findings") or [])  # older export without scores: compute (minus served-port evidence)
+        self.top_exposure = sorted(self.physical, key=lambda a: (-int(a.get("exposure") or 0), a.get("name") or ""))[:10]
+        self.fleet = fleet_view(self.assets)
         self.derived = [a for a in self.assets if not a.get("physical_asset")]
         self.access_methods = sorted({s.get("access_method", "") for s in self.sessions if s.get("access_method")})
         self.points = sorted({s.get("collection_point", "") for s in self.sessions})
@@ -660,6 +666,14 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
     if a.external:
         d.bullet(f"{len(a.external)} relationship(s) reach external or unmapped endpoints and require validation against firewall policy and vendor-access records.")
     d.bullet("A production assessment must reconcile passive evidence with drawings, switch and firewall data, interviews, configuration reviews and physical walkdowns.")
+    if a.top_exposure and any(int(x.get("exposure") or 0) for x in a.top_exposure):
+        d.h2("Assets to address first")
+        d.para("Exposure is a prioritisation score (0–100) built only from what was observed and documented on site: the criticality the assessor recorded, what the asset talks to across zone boundaries and how those conduits were judged, lifecycle and backup state, cleartext management services it serves, OPC UA security posture, and any validated finding in the register that names the asset. Every point is itemised; it is not a vulnerability or likelihood score and carries no CVE data.")
+        d.table(["Asset", "Type / level", "Criticality", "Exposure", "Why"],
+                [[[x.get("name") or a.mac(x.get("mac") or ""), f"{x.get('manufacturer') or ''} {x.get('model') or ''}".strip()], [x.get("display_type") or "", x.get("purdue_level") or "level unassigned"], x.get("criticality") or "—",
+                  (f"{x.get('exposure')} · {x.get('exposure_band')}", RED if x.get("exposure_band") == "Critical" else AMBER if x.get("exposure_band") == "High" else INK, True),
+                  "; ".join(x.get("exposure_factors") or [])] for x in a.top_exposure],
+                [0.20, 0.16, 0.10, 0.12, 0.42], size=8)
     d.h2("Findings summary" if a.register_mode else "Observation summary")
     d.table(["Ref", "Finding / observation", "Type", "Rating", "Status", "Recommended owner"],
             [[f["ref"], f["title"], f.get("kind", ""), (f["rating"], RED if f["rating"] in ("Critical", "High priority") else GREEN if f["rating"] == "Positive" else AMBER if f["rating"] == "Moderate" else MUTED, True), f.get("status", "Draft"), f["owner"]] for f in a.reportable],
@@ -759,6 +773,14 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
         d_rng = f"{min(confs)}–{max(confs)}%" if min(confs) != max(confs) else f"{confs[0]}%"
         type_rows.append([t, str(n), d_rng, f"{overridden} of {n} assessor-confirmed" if overridden else "Automatic inference only"])
     d.table(["Device type (displayed)", "Count", "Confidence", "Basis"], type_rows or [["None", "0", "—", "No physical assets inferred"]], [0.40, 0.10, 0.15, 0.35])
+    if a.fleet:
+        d.h2("Fleet view by manufacturer and model")
+        d.para("The same finding often applies to every unit of a model. This groups the physical inventory so lifecycle, firmware spread and exposure can be read per fleet rather than per device.")
+        d.table(["Manufacturer / model", "Units", "Firmware seen", "End of life/support", "No / unknown backup", "Highest exposure", "Units"],
+                [[[g["manufacturer"], g["model"]], str(g["count"]), g["firmware"], (str(g["eol"]), RED if g["eol"] else INK, bool(g["eol"])), (str(g["no_backup"]), AMBER if g["no_backup"] else INK, bool(g["no_backup"])),
+                  (f"{g['max_exposure']} · {exposure_band(g['max_exposure'])}", RED if exposure_band(g["max_exposure"]) == "Critical" else AMBER if exposure_band(g["max_exposure"]) == "High" else INK, False),
+                  ", ".join(g["names"][:6]) + (" …" if len(g["names"]) > 6 else "")] for g in a.fleet[:25]],
+                [0.22, 0.06, 0.14, 0.10, 0.10, 0.12, 0.26], size=8)
     d.h2("Asset inventory")
     rows = []
     for x in sorted(a.assets, key=lambda v: (not v.get("physical_asset"), -int(v.get("packets") or 0))):
@@ -768,8 +790,9 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
                      [x.get("display_type") or "—", f"{x.get('type_source', '')} · {x.get('type_confidence', 0)}%"],
                      [x.get("classification") or "", x.get("classification_evidence") or ""],
                      ("Yes", GREEN, True) if x.get("physical_asset") else ("No", AMBER, True),
+                     (str(x.get("exposure")), RED if x.get("exposure_band") == "Critical" else AMBER if x.get("exposure_band") == "High" else INK, x.get("exposure_band") in ("Critical", "High")) if x.get("physical_asset") else ("—", MUTED),
                      "; ".join(ctx) or ("Not documented", MUTED)])
-    d.table(["Identity / MAC / IPs", "Manufacturer / model", "Likely type", "Classification", "Physical", "Assessment context"], rows or [["No assets observed", "", "", "", "", ""]], [0.24, 0.16, 0.16, 0.19, 0.09, 0.16], size=8)
+    d.table(["Identity / MAC / IPs", "Manufacturer / model", "Likely type", "Classification", "Physical", "Exposure", "Assessment context"], rows or [["No assets observed", "", "", "", "", "", ""]], [0.22, 0.15, 0.15, 0.18, 0.08, 0.08, 0.14], size=8)
     d.muted(f"Source: OT Scout assessment export generated {generated}. {'MAC addresses sanitised for distribution. ' if a.sanitize else ''}Physical count excludes locally administered, low-evidence identities that are likely virtual or derived.")
     fp_rows = []
     for x in a.assets:
@@ -887,6 +910,13 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
     else:
         d.para("Confirmed control deficiencies, evidence gaps and improvement opportunities are kept separate. The entries below were generated from the evidence in this data set and are drafts: the assessor must validate, reword or remove each one, and add findings from interviews, configuration review and walkdown that the collector cannot see.")
         d.callout("Assessor validation required", f"{len(a.findings)} automatically generated entr{'y' if len(a.findings) == 1 else 'ies'}. None has been reviewed by a person. Import them into the findings register to edit and validate.", AMBER_BG, AMBER)
+    rollup = iec62443_rollup(a.reportable)
+    if rollup:
+        d.h2("IEC 62443 requirements addressed by the findings")
+        d.para("Which system requirements (IEC 62443-3-3) and service-provider practices (62443-2-4) the findings bear on, most-cited first. Use it to see where the site's gaps cluster and to map this report into an existing 62443 programme.")
+        d.table(["Requirement", "Findings", "Worst rating", "Refs"],
+                [[[h["requirement"], h["name"]], str(len(h["findings"])), (h["worst"], RED if h["worst"] in ("Critical", "High priority") else AMBER if h["worst"] == "Moderate" else INK, h["worst"] in ("Critical", "High priority")), ", ".join(h["findings"])] for h in rollup],
+                [0.34, 0.10, 0.16, 0.40], size=8)
     for f in a.reportable:
         d.h2(f"{f['ref']} — {f['title']}")
         d.labeled("Type / rating", f"{f.get('kind', '')}; {f['rating']} (evidence confidence: {f['confidence']}; recommended owner: {f['owner'] or 'unassigned'}; horizon: {f.get('horizon') or 'unassigned'}; status: {f.get('status', 'Draft')})")

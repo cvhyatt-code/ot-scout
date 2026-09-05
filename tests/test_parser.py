@@ -1063,3 +1063,42 @@ class RealCaptureTests(unittest.TestCase):
                              ("opcua_auth", "User name (operator)"), ("software", "FreeOpcUa (open source)"), ("role", "OPC UA server"), ("role", "OPC UA client")]:
                 self.assertIn(expected, fps)
             self.assertFalse(any("wrong-password" in v for _, v in fps))
+
+
+class ExposureTests(unittest.TestCase):
+    def test_score_is_itemised_and_capped(self):
+        from ot_scout.exposure import score_asset, band
+        asset = {"id": 1, "physical_asset": 1, "criticality": "Critical", "support_status": "End of support", "backup_status": "No backup", "purdue_level": "Level 1",
+                 "fingerprints": [{"field": "opcua_security_policies", "value": "None"}]}
+        rels = [{"key_a": "asset:1", "key_b": "ip:8.8.8.8", "level_a": "Level 1", "level_b": "External", "crossing": "OT to external/internet", "decision": "Unexpected"},
+                {"key_a": "asset:1", "key_b": "asset:2", "level_a": "Level 1", "level_b": "Level 4", "crossing": "OT to enterprise (bypasses industrial DMZ)", "decision": "Unknown"}]
+        r = score_asset(asset, rels, {23, 161})
+        self.assertEqual(r["exposure"], 100)  # 40+25+15+15+10+8+10 = 123, capped
+        self.assertEqual(r["exposure_band"], "Critical")
+        self.assertTrue(any(f.startswith("Talks to an external endpoint") and "(+25)" in f for f in r["exposure_factors"]))
+        self.assertTrue(any("Telnet" in f and "SNMP" in f for f in r["exposure_factors"]))
+        named = score_asset({"id": 3, "name": "CAM-01", "mac": "d0:3f:27:70:00:01", "physical_asset": 1, "criticality": "Low", "purdue_level": "Level 1", "support_status": "Supported", "backup_status": "Backed up and tested"}, [], set(),
+                            [{"ref": "FND-01", "rating": "Critical", "status": "Validated", "assets": "d0:3f:27:70:00:01 on PROC-SW2"}, {"ref": "FND-09", "rating": "Moderate", "status": "Rejected", "assets": "CAM-01"}])
+        self.assertEqual(named["exposure"], 30)  # 10 + 20; the rejected finding does not count
+        self.assertTrue(any("FND-01" in f for f in named["exposure_factors"]))
+        quiet = score_asset({"id": 2, "physical_asset": 1, "criticality": "Low", "purdue_level": "Level 2", "support_status": "Supported", "backup_status": "Backed up and tested"}, [], set())
+        self.assertEqual((quiet["exposure"], quiet["exposure_band"]), (10, "Low"))
+        self.assertEqual(band(69), "High"); self.assertEqual(band(70), "Critical")
+
+    def test_store_annotates_assets_and_report_prints_the_sections(self):
+        import io, zipfile
+        from ot_scout.report import build_report, collect
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "t.db"))
+            sid = store.begin_session("a", "s", "p", "eth0", "live", "Configured SPAN/mirror")
+            frames = [_tcp_frame("10.0.0.1", "10.0.0.2", 40000 + i, 23, b"", "00:1c:06:00:00:01", "00:1c:06:00:00:02") for i in range(3)]
+            frames += [_tcp_frame("10.0.0.2", "10.0.0.1", 23, 40000 + i, b"", "00:1c:06:00:00:02", "00:1c:06:00:00:01") for i in range(3)]
+            store.record_many(sid, [parse_ethernet(f, 1.0 + i) for i, f in enumerate(frames)])
+            assets = store.assets_with_exposure()
+            self.assertTrue(all("exposure" in a for a in assets))
+            server = next(a for a in assets if a["mac"] == "00:1c:06:00:00:02")
+            self.assertTrue(any("Telnet" in f for f in server["exposure_factors"]))
+            store.save_finding({"title": "Telnet on a switch", "kind": "Control deficiency", "rating": "Moderate", "status": "Validated", "iec62443": "SR 4.1 Information confidentiality; SR 1.13 Access via untrusted networks"})
+            doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
+            for text in ("Assets to address first", "Fleet view by manufacturer and model", "IEC 62443 requirements addressed by the findings", "SR 4.1"):
+                self.assertIn(text, doc)

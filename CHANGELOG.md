@@ -2,6 +2,13 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.8.0 — 2026-09-05
+- Exposure score per asset (0–100, banded Low/Moderate/High/Critical). A prioritisation aid built only from what the assessment already holds — assessor-recorded criticality, boundary crossings and their conduit decisions, external and DMZ-bypass paths, lifecycle and backup state, cleartext management services served, OPC UA security posture, and validated findings in the register that name the asset — with every point itemised ("Talks to an external endpoint, worst decision Unexpected (+25)"). Not a vulnerability or likelihood score; no CVE data. Shown as a pill on the inventory (hover for the breakdown), as an Exposure column in the report's inventory table, and as "Assets to address first" at the top of the executive readout in both the app and the Word report.
+- Fleet view: the physical inventory grouped by manufacturer and model with unit count, firmware spread, end-of-life count, no/unknown-backup count and highest exposure — so "PLC-07 is end of support" becomes "both of your S7-315s are". Report tab and report section 3.
+- IEC 62443 requirements addressed by the findings: a rollup of which SRs / 2-4 practices the register bears on, most-cited first, with worst rating and finding refs. Report tab and report section 5.
+- New Executive readout panel at the top of the Report tab carrying the three tables above — the same order they lead the Word report in.
+- The three ideas were taken from what Claroty xDome's reporting is built around (per-device risk score, "vulnerable assets by model", compliance rollups), cut down to what a point-in-time assessment can defend without a monitoring history or a peer population.
+
 ## v0.7.1 — 2026-09-05
 - First real-traffic validation of the OPC UA decoder: a capture of an opcua-asyncio 2.x server and client (loopback, anonymous session then a user-name session) is now a fixture in `tests/fixtures/` with a regression test. Every expected claim came out of real bytes — server application name and product URI, endpoint, security policy/mode/tokens offered, client application, anonymous vs "User name (operator)" — and the password never appears anywhere.
 - PCAP import limit raised from 100 MB to 512 MB so the public 4SICS captures (25/134/200 MB) fit. The file is read into memory during import.

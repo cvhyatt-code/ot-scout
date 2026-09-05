@@ -117,7 +117,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"version": __version__, "changelog": read_doc("changelog"), "guide": read_doc("guide")})
         if path == "/api/database": return self._json(self.server.database_status())
         if path == "/api/vendor-status": return self._json(self.server.store.vendor_status())
-        if path == "/api/assets": return self._json(self.server.store.assets())
+        if path == "/api/assets": return self._json(self.server.store.assets_with_exposure())
+        if path == "/api/summary":
+            from .exposure import fleet_view, iec62443_rollup
+            store = self.server.store
+            assets = store.assets_with_exposure()
+            top = sorted([a for a in assets if a.get("physical_asset")], key=lambda a: (-int(a.get("exposure") or 0), a.get("name") or ""))[:15]
+            findings = [f for f in store.findings() if f.get("status") != "Rejected"]
+            return self._json({"top_exposure": [{k: a.get(k) for k in ("id", "name", "mac", "manufacturer", "model", "display_type", "criticality", "purdue_level", "exposure", "exposure_band", "exposure_factors")} for a in top],
+                               "fleet": fleet_view(assets), "iec62443": iec62443_rollup(findings)})
         if path == "/api/relationships": return self._json(self.server.store.relationships())
         if path == "/api/discovery": return self._json(self.server.store.discovery_traffic())
         if path == "/api/connections": return self._json(self.server.store.connections())
