@@ -19,7 +19,7 @@ Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification,
 ## Run it
 
 ```bash
-git clone https://github.com/<you>/ot-scout.git
+git clone https://github.com/cvhyatt-code/ot-scout.git
 cd ot-scout
 python3 -m unittest discover -s tests   # 54 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
