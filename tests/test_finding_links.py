@@ -83,6 +83,11 @@ class FindingLinkTests(unittest.TestCase):
             self.assertEqual([f["id"] for f in store.findings_for("pair", "Level 1|Level 2")], [manual["id"]])
             store.unlink_finding(manual["id"], "pair", "Level 1|Level 2")
             self.assertEqual(store.findings_for("pair", "Level 1|Level 2"), [])
+            # a links-only save is a valid update (what a "link to this conduit" click sends)
+            row = store.save_finding({"id": manual["id"], "links": [{"kind": "asset", "key": str(ids[self.PLC])}]})
+            self.assertEqual(row["links"], [{"kind": "asset", "key": str(ids[self.PLC])}])
+            with self.assertRaises(ValueError):
+                store.save_finding({"id": manual["id"]})
             with self.assertRaises(ValueError):
                 store.link_finding(manual["id"], "bogus", "x")
             # delete cascades
@@ -102,6 +107,28 @@ class FindingLinkTests(unittest.TestCase):
             rows = [f for f in store.findings() if f["title"] == title]
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["draft_key"], Store.draft_key_for(drafts[0]))
+
+
+class DemoLinkTests(unittest.TestCase):
+    def test_demo_register_links_assessor_findings_and_rejects_superseded_drafts(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        import demo
+        with tempfile.TemporaryDirectory() as tmp:
+            store = demo.build_demo(Path(tmp) / "demo.db").store
+            reg = store.findings()
+            by_title = lambda frag: next(f for f in reg if frag in f["title"])
+            self.assertTrue(by_title("Unknown consumer IP camera")["links"])
+            self.assertTrue(by_title("Vendor remote access")["links"])
+            self.assertTrue(by_title("Cleartext management")["links"])
+            self.assertEqual(next(f for f in reg if f["draft_key"] == "unexpected-external")["status"], "Rejected")
+            self.assertEqual(by_title("External communication pathways")["status"], "Rejected")
+            self.assertEqual(next(f for f in reg if f["draft_key"] == "dmz-bypass")["status"], "Validated")
+            # the camera conduit resolves to FND-01 (validated) and the rejected draft — the UI decides how to show rejected
+            cam = next(r for r in store.relationships(100000) if "203.0.113.9" in (r["endpoint_a"], r["endpoint_b"]))
+            hits = store.findings_for("relationship", f"{cam['key_a']}|{cam['key_b']}")
+            self.assertIn("Unknown consumer IP camera connected to the process VLAN and streaming to the internet", [f["title"] for f in hits])
+            self.assertTrue(any(f["status"] == "Validated" for f in hits))
 
 
 if __name__ == "__main__":

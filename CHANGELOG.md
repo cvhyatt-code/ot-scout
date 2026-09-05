@@ -2,6 +2,10 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.12.1 — 2026-09-05
+- `save_finding` accepts a links-only update (`{"id": …, "links": […]}`), which is what linking a finding to a conduit from the UI will send.
+- Demo shows the intended workflow on the new links: the assessor-written camera (FND-01), vendor RDP (FND-02) and cleartext-management findings are linked to their relationships, zone pairs and assets; the auto-drafts they supersede ("OT assets communicate directly with external…", "External communication pathways require policy validation") are Rejected instead of sitting in the register as duplicates.
+
 ## v0.12.0 — 2026-09-05
 - Findings now link to the evidence they cite: `finding_links` table (kinds `relationship`, `asset`, `pair`); every auto-draft carries its links; `Store.findings_for(kind, key)` answers "which findings cite this conduit / asset / zone pair" (a zone-pair query also matches findings linked to relationships inside it). `save_finding` accepts `links`; `link_finding` / `unlink_finding` for manual edits. Register rows carry `links` in `/api/findings`.
 - Draft import matches on a stable `draft_key` instead of the title, so retitling a finding no longer causes a re-import to duplicate it; existing registers are back-filled by title once.

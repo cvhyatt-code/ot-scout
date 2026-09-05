@@ -517,6 +517,10 @@ class Demo:
                 updates.update(kind="Control deficiency", rating="High priority", horizon="Immediate / quick win", owner="OT engineering")
             if "Industrial protocols observed" in f["title"]:
                 updates.update(status="Validated", horizon="30-90 days")
+            if f.get("draft_key") == "unexpected-external" or "External communication pathways" in f["title"]:
+                # the assessor wrote FND-01 (camera) and FND-02 (vendor RDP) with walkdown and interview evidence;
+                # the drafts that describe the same conduits are rejected as superseded, not left as duplicates
+                updates.update(status="Rejected")
             st.save_finding(updates)
         st.save_finding({"title": "Unknown consumer IP camera connected to the process VLAN and streaming to the internet", "kind": "Control deficiency", "rating": "Critical", "confidence": "High",
                          "owner": "OT engineering / plant superintendent", "horizon": "Immediate / quick win", "status": "Validated", "site": "Main WTP", "assets": "d0:3f:27:70:00:01 on PROC-SW2 Gi1/14",
@@ -556,6 +560,31 @@ class Demo:
                          "evidence": "Backup records reviewed; restore test log 2026-06-12.", "impact": "Recovery of core supervisory functions is credible.",
                          "recommendation": "Extend the same regime to the filter PLC, HMIs, EWS and RTUs.", "closure": "Not applicable.",
                          "iec62443": format_refs(["SR 7.3", "SR 7.4"]), "attack": ""})
+        self.link_findings()
+
+    def link_findings(self):
+        """Attach assessor-written findings to the relationships they describe, so the conduit table and
+        Purdue diagram can open them. Auto-drafts arrive with their links; hand-written findings need this."""
+        st = self.store
+        rels = st.relationships(100000)
+
+        def links_for(group):
+            out, seen = [], set()
+            for r in group:
+                cands = [("relationship", Store.relationship_key(r["key_a"], r["key_b"])), ("pair", Store.pair_key(r["level_a"], r["level_b"]))]
+                cands += [("asset", k.split(":", 1)[1]) for k in (r["key_a"], r["key_b"]) if str(k).startswith("asset:")]
+                for kind, key in cands:
+                    if (kind, key) not in seen:
+                        seen.add((kind, key)); out.append({"kind": kind, "key": key})
+            return out
+
+        camera = [r for r in rels if "203.0.113.9" in (r["endpoint_a"], r["endpoint_b"])]
+        vendor = [r for r in rels if "203.0.113.34" in (r["endpoint_a"], r["endpoint_b"])]
+        mgmt = [r for r in rels if any(p in (r.get("protocols") or "") for p in ("SNMP", "TELNET"))]
+        for fragment, group in (("Unknown consumer IP camera", camera), ("Vendor remote access", vendor), ("Cleartext management", mgmt)):
+            target = next((f for f in st.findings() if fragment in f["title"]), None)
+            if target and group and not target["links"]:
+                st.save_finding({"id": target["id"], "links": links_for(group)})
 
 
 def set_session_times(store, session_id, start, end):

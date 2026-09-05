@@ -1379,10 +1379,11 @@ class Store:
         now = iso_time()
         with self.lock, self.connect() as db:
             if finding_id:
-                if not updates:
+                if not updates and "links" not in values:
                     raise ValueError("No finding fields were supplied")
-                sets = ",".join(f"{f}=?" for f in updates)
-                db.execute(f"UPDATE findings SET {sets},updated_at=? WHERE id=?", (*updates.values(), now, int(finding_id)))
+                if updates:
+                    sets = ",".join(f"{f}=?" for f in updates)
+                    db.execute(f"UPDATE findings SET {sets},updated_at=? WHERE id=?", (*updates.values(), now, int(finding_id)))
             else:
                 if not updates.get("title"):
                     raise ValueError("Finding title is required")
