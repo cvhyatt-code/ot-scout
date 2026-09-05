@@ -85,6 +85,7 @@ DRAFT_MAPPING = {
     "Multiple IPv4 subnets observed on the same Layer-2 segment": (["SR 5.1", "SR 7.6"], ["T0846", "T0884"]),
     "Communications marked unexpected against the conduit baseline": (["SR 5.1", "SR 5.2", "SR 2.1"], ["T0886", "T0866", "T0855"]),
     "Direct OT-to-enterprise communications bypass the industrial DMZ": (["SR 5.1", "SR 5.2", "SR 5.4"], ["T0886", "T0866", "T0859"]),
+    "OT assets communicate directly with external or internet endpoints": (["SR 5.1", "SR 5.2", "SR 5.4"], ["T0883", "T0822", "T0886"]),
     "Boundary-crossing communications not yet reviewed against a conduit baseline": (["SR 5.1", "SR 5.2"], []),
     "Purdue level not assigned for all physical assets": (["SR 5.1", "SR 7.8"], []),
     "End-of-life or end-of-support OT assets in service": (["2-4 SP.11", "SR 7.8"], ["T0866", "T0890"]),

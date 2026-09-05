@@ -251,10 +251,15 @@ class Store:
                 if column not in existing:
                     db.execute(f"ALTER TABLE sessions ADD COLUMN {column} {decl}")
             existing = {r[1] for r in db.execute("PRAGMA table_info(findings)")}
-            for column in ("iec62443", "attack"):
+            for column in ("iec62443", "attack", "draft_key"):
                 if column not in existing:
                     db.execute(f"ALTER TABLE findings ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
             db.executescript("""
+            CREATE TABLE IF NOT EXISTS finding_links (
+              finding_id INTEGER NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+              kind TEXT NOT NULL, key TEXT NOT NULL,
+              PRIMARY KEY(finding_id,kind,key)
+            );
             CREATE TABLE IF NOT EXISTS asset_aliases (
               mac TEXT PRIMARY KEY, asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
               note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
@@ -1360,7 +1365,8 @@ class Store:
     FINDING_STATUSES = ("Draft", "Validated", "Accepted", "Rejected", "Closed")
     FINDING_FIELDS = {"ref": 20, "title": 200, "kind": 40, "rating": 40, "confidence": 20, "owner": 200, "condition": 4000,
                       "evidence": 4000, "impact": 4000, "recommendation": 4000, "closure": 4000, "horizon": 40,
-                      "status": 20, "site": 200, "assets": 1000, "source": 60, "iec62443": 500, "attack": 500}
+                      "status": 20, "site": 200, "assets": 1000, "source": 60, "iec62443": 500, "attack": 500, "draft_key": 120}
+    LINK_KINDS = ("relationship", "asset", "pair")
 
     def save_finding(self, values: dict) -> dict:
         self._bump()
@@ -1385,7 +1391,9 @@ class Store:
                 cols = ",".join(updates)
                 cur = db.execute(f"INSERT INTO findings({cols},created_at,updated_at) VALUES({','.join('?' for _ in updates)},?,?)", (*updates.values(), now, now))
                 finding_id = cur.lastrowid
-            return dict(db.execute("SELECT * FROM findings WHERE id=?", (int(finding_id),)).fetchone())
+            if "links" in values:
+                self._replace_links(db, int(finding_id), values["links"] or [])
+            return self._finding_row(db, int(finding_id))
 
     @staticmethod
     def _next_ref(db, kind: str) -> str:
@@ -1403,25 +1411,124 @@ class Store:
         order = {r: i for i, r in enumerate(self.FINDING_RATINGS)}
         with self.connect() as db:
             rows = [dict(r) for r in db.execute("SELECT * FROM findings")]
+            links: dict[int, list] = {}
+            for r in db.execute("SELECT finding_id,kind,key FROM finding_links ORDER BY kind,key"):
+                links.setdefault(r[0], []).append({"kind": r[1], "key": r[2]})
+        for f in rows:
+            f["links"] = links.get(f["id"], [])
         return sorted(rows, key=lambda f: (order.get(f["rating"], 99), f["ref"]))
 
-    def import_draft_findings(self, drafts: list[dict]) -> int:
-        """Add auto-drafted observations that are not already in the register (matched by title)."""
-        added = 0
+    # ---- finding ↔ evidence links --------------------------------------------------------
+    # kind 'relationship': key "key_a|key_b" (the conduit endpoint pair, as sorted by save_conduit)
+    # kind 'asset':        key = asset id as text
+    # kind 'pair':         key "Level A|Level B" (zone pair, ordered by level_rank — see pair_key)
+    @classmethod
+    def pair_key(cls, level_a: str, level_b: str) -> str:
+        lo, hi = sorted((level_a or "", level_b or ""), key=lambda v: (cls.level_rank(v), v))
+        return f"{lo}|{hi}"
+
+    @staticmethod
+    def relationship_key(key_a: str, key_b: str) -> str:
+        return "|".join(sorted((str(key_a), str(key_b))))
+
+    def _normalise_link(self, link: dict) -> tuple[str, str]:
+        kind = str(link.get("kind", "")).strip()
+        key = str(link.get("key", "")).strip()[:300]
+        if kind not in self.LINK_KINDS or not key:
+            raise ValueError(f"Invalid finding link: {link!r}")
+        if kind == "pair" and "|" in key:
+            key = self.pair_key(*key.split("|", 1))
+        if kind == "relationship" and "|" in key:
+            key = self.relationship_key(*key.split("|", 1))
+        return kind, key
+
+    def _replace_links(self, db, finding_id: int, links: list[dict]):
+        pairs = {self._normalise_link(l) for l in links}
+        db.execute("DELETE FROM finding_links WHERE finding_id=?", (finding_id,))
+        db.executemany("INSERT OR IGNORE INTO finding_links(finding_id,kind,key) VALUES(?,?,?)",
+                       [(finding_id, k, v) for k, v in sorted(pairs)])
+
+    def _finding_row(self, db, finding_id: int) -> dict:
+        row = db.execute("SELECT * FROM findings WHERE id=?", (finding_id,)).fetchone()
+        if not row:
+            raise ValueError("Finding does not exist")
+        item = dict(row)
+        item["links"] = [{"kind": r[0], "key": r[1]} for r in db.execute("SELECT kind,key FROM finding_links WHERE finding_id=? ORDER BY kind,key", (finding_id,))]
+        return item
+
+    def link_finding(self, finding_id: int, kind: str, key: str) -> dict:
+        self._bump()
+        kind, key = self._normalise_link({"kind": kind, "key": key})
+        with self.lock, self.connect() as db:
+            if not db.execute("SELECT 1 FROM findings WHERE id=?", (finding_id,)).fetchone():
+                raise ValueError("Finding does not exist")
+            db.execute("INSERT OR IGNORE INTO finding_links(finding_id,kind,key) VALUES(?,?,?)", (finding_id, kind, key))
+            return self._finding_row(db, finding_id)
+
+    def unlink_finding(self, finding_id: int, kind: str, key: str) -> dict:
+        self._bump()
+        kind, key = self._normalise_link({"kind": kind, "key": key})
+        with self.lock, self.connect() as db:
+            db.execute("DELETE FROM finding_links WHERE finding_id=? AND kind=? AND key=?", (finding_id, kind, key))
+            return self._finding_row(db, finding_id)
+
+    def findings_for(self, kind: str, key: str) -> list[dict]:
+        """Findings that cite this relationship / asset / zone pair. A 'pair' query also matches
+        findings linked only to relationships inside that pair."""
+        kind, key = self._normalise_link({"kind": kind, "key": key})
         with self.connect() as db:
-            existing = {row[0] for row in db.execute("SELECT title FROM findings")}
-        for draft in drafts:
-            if draft["title"] in existing:
-                continue
-            kind = ("Positive observation" if draft["rating"] == "Positive" else
-                    "Improvement opportunity" if draft["rating"] == "Informational" else "Evidence gap")
-            horizon = "Immediate / quick win" if draft["rating"] == "High priority" else "Not applicable" if draft["rating"] == "Positive" else "30-90 days"
-            self.save_finding({"title": draft["title"], "kind": kind, "rating": draft["rating"], "confidence": draft["confidence"],
-                               "owner": draft["owner"], "condition": draft["condition"], "evidence": draft["evidence"],
-                               "impact": draft["impact"], "recommendation": draft["recommendation"], "closure": draft["closure"],
-                               "horizon": horizon, "status": "Draft", "source": "OT Scout draft",
-                               "iec62443": draft.get("iec62443", ""), "attack": draft.get("attack", "")})
-            added += 1
+            ids = {r[0] for r in db.execute("SELECT finding_id FROM finding_links WHERE kind=? AND key=?", (kind, key))}
+        if kind == "pair":
+            rel_keys = {self.relationship_key(r["key_a"], r["key_b"]) for r in self.relationships(100000)
+                        if self.pair_key(r["level_a"], r["level_b"]) == key}
+            if rel_keys:
+                with self.connect() as db:
+                    for r in db.execute("SELECT finding_id,key FROM finding_links WHERE kind='relationship'"):
+                        if r[1] in rel_keys:
+                            ids.add(r[0])
+        return [f for f in self.findings() if f["id"] in ids]
+
+    @staticmethod
+    def draft_key_for(draft: dict) -> str:
+        key = draft.get("draft_key") or re.sub(r"[^a-z0-9]+", "-", draft["title"].lower()).strip("-")
+        return key[:120]
+
+    def import_draft_findings(self, drafts: list[dict]) -> int:
+        """Add auto-drafted observations that are not already in the register.
+        Matched by draft_key, so the assessor can retitle a finding without a re-import duplicating it;
+        registers written before draft_key existed are matched by title once and back-filled."""
+        added = 0
+        with self.lock:
+            with self.connect() as db:
+                by_key = {row[0]: row[1] for row in db.execute("SELECT draft_key,id FROM findings WHERE draft_key<>''")}
+                by_title = {row[0]: row[1] for row in db.execute("SELECT title,id FROM findings WHERE draft_key=''")}
+                for draft in drafts:
+                    dk = self.draft_key_for(draft)
+                    fid = by_key.get(dk)
+                    if fid is None and draft["title"] in by_title:
+                        fid = by_title.pop(draft["title"])
+                        db.execute("UPDATE findings SET draft_key=? WHERE id=?", (dk, fid))
+                        by_key[dk] = fid
+                    if fid is not None and draft.get("links"):
+                        # keep the assessor's wording; only supply links where the finding has none yet
+                        if not db.execute("SELECT 1 FROM finding_links WHERE finding_id=? LIMIT 1", (fid,)).fetchone():
+                            self._replace_links(db, fid, draft["links"])
+            for draft in drafts:
+                dk = self.draft_key_for(draft)
+                if dk in by_key:
+                    continue
+                kind = ("Positive observation" if draft["rating"] == "Positive" else
+                        "Improvement opportunity" if draft["rating"] == "Informational" else "Evidence gap")
+                horizon = "Immediate / quick win" if draft["rating"] == "High priority" else "Not applicable" if draft["rating"] == "Positive" else "30-90 days"
+                row = self.save_finding({"title": draft["title"], "kind": kind, "rating": draft["rating"], "confidence": draft["confidence"],
+                                         "owner": draft["owner"], "condition": draft["condition"], "evidence": draft["evidence"],
+                                         "impact": draft["impact"], "recommendation": draft["recommendation"], "closure": draft["closure"],
+                                         "horizon": horizon, "status": "Draft", "source": "OT Scout draft",
+                                         "iec62443": draft.get("iec62443", ""), "attack": draft.get("attack", ""),
+                                         "draft_key": dk, "links": draft.get("links", [])})
+                by_key[dk] = row["id"]
+                added += 1
+        self._bump()
         return added
 
     def update_vendors(self) -> int:
@@ -1435,4 +1542,4 @@ class Store:
     def reset(self):
         self._bump()
         with self.lock, self.connect() as db:
-            db.executescript("DELETE FROM connections;DELETE FROM dns_names;DELETE FROM fingerprints;DELETE FROM asset_names;DELETE FROM asset_ips;DELETE FROM sightings;DELETE FROM assets;DELETE FROM sessions;DELETE FROM network_legs;DELETE FROM site_checklist;DELETE FROM sites;DELETE FROM findings;DELETE FROM conduits;DELETE FROM asset_aliases;")
+            db.executescript("DELETE FROM connections;DELETE FROM dns_names;DELETE FROM fingerprints;DELETE FROM asset_names;DELETE FROM asset_ips;DELETE FROM sightings;DELETE FROM assets;DELETE FROM sessions;DELETE FROM network_legs;DELETE FROM site_checklist;DELETE FROM sites;DELETE FROM finding_links;DELETE FROM findings;DELETE FROM conduits;DELETE FROM asset_aliases;")

@@ -416,6 +416,8 @@ class Analysis:
         self.unexpected_rels = [r for r in self.relationships if r.get("decision") == "Unexpected"]
         self.unreviewed_crossings = [r for r in self.crossing_rels if r.get("decision", "Unknown") == "Unknown"]
         self.bypass_rels = [r for r in self.relationships if "bypass" in (r.get("crossing") or "")]
+        self.external_unexpected = [r for r in self.unexpected_rels if "external" in (r.get("crossing") or "")]
+        self.other_unexpected = [r for r in self.unexpected_rels if r not in self.external_unexpected and r not in self.bypass_rels]
         self.drafts = self._findings()
         self.register = data.get("findings") or []
         self.findings = self.register if self.register else self.drafts
@@ -508,21 +510,47 @@ class Analysis:
                         "impact": "A device on an unexpected subnet within an OT segment can indicate a misconfiguration, a guest/overlay network bridged into the segment, a vendor device with factory addressing, or an undocumented path between zones.",
                         "recommendation": "Identify each minority-subnet device, confirm whether its addressing is intentional and documented, and verify no routing or bridging exists between the subnets that bypasses the zone boundary.",
                         "closure": "Each subnet on the segment is documented with purpose and owner, or the stray device is corrected."})
-        if self.unexpected_rels:
-            detail = "; ".join(f"{r['endpoint_a']} ↔ {r['endpoint_b']} ({r.get('protocols')}; {r.get('crossing') or 'within level'})" for r in self.unexpected_rels[:8])
-            out.append({"id": f"OBS-{len(out) + 1:02d}", "title": "Communications marked unexpected against the conduit baseline", "rating": "High priority", "confidence": "High", "owner": "OT security / firewall owner",
-                        "condition": f"{len(self.unexpected_rels)} observed relationship(s) were reviewed by the assessor and marked Unexpected: {detail}.",
+        def _links(rels):
+            from .store import Store
+            out_links, seen = [], set()
+            for r in rels:
+                ka, kb = str(r.get("key_a", "")), str(r.get("key_b", ""))
+                candidates = [("relationship", Store.relationship_key(ka, kb)), ("pair", Store.pair_key(r.get("level_a", ""), r.get("level_b", "")))]
+                candidates += [("asset", k.split(":", 1)[1]) for k in (ka, kb) if k.startswith("asset:")]
+                for kind, key in candidates:
+                    if key and key != "|" and (kind, key) not in seen:
+                        seen.add((kind, key)); out_links.append({"kind": kind, "key": key})
+            return out_links
+        _rel = lambda r: f"{r['endpoint_a']} ({r.get('level_a', '')}) ↔ {r['endpoint_b']} ({r.get('level_b', '')}): {r.get('protocols')}"
+        if self.external_unexpected:
+            out.append({"id": f"OBS-{len(out) + 1:02d}", "draft_key": "unexpected-external", "title": "OT assets communicate directly with external or internet endpoints",
+                        "rating": "High priority", "confidence": "High", "owner": "OT network owner / firewall owner",
+                        "condition": f"{len(self.external_unexpected)} relationship(s) between assets at Purdue Level 3 or below and external/internet endpoints were reviewed by the assessor and marked Unexpected: " + "; ".join(_rel(r) for r in self.external_unexpected[:8]) + ".",
+                        "evidence": "Passive flow evidence (external destination, protocol, packet counts) plus the assessor's conduit decision and recorded purpose.",
+                        "impact": "A direct path between the control network and the internet exposes OT assets to remote compromise and data exfiltration without an inspected boundary; consumer or vendor devices calling home from a process VLAN are a common cause and are rarely on any drawing.",
+                        "recommendation": "Identify the device and destination behind each flow. Remove or relocate devices with no operational reason to reach the internet; route any required external access through the industrial DMZ under explicit firewall rules with logging.",
+                        "closure": "No Level ≤3 asset reaches an external endpoint except through a documented, DMZ-terminated conduit.",
+                        "links": _links(self.external_unexpected)})
+        if self.bypass_rels:
+            flagged = [r for r in self.bypass_rels if r.get("decision") == "Unexpected"]
+            out.append({"id": f"OBS-{len(out) + 1:02d}", "draft_key": "dmz-bypass", "title": "Direct OT-to-enterprise communications bypass the industrial DMZ", "rating": "High priority",
+                        "confidence": "High" if flagged else "Moderate", "owner": "OT network owner",
+                        "condition": f"{len(self.bypass_rels)} relationship(s) connect assets at Purdue Level 3 or below directly to Level 4/5 assets with no industrial DMZ in between"
+                                     + (f"; {len(flagged)} of them were reviewed by the assessor and marked Unexpected" if flagged else "") + ".",
+                        "evidence": "; ".join(_rel(r) + (f" [{r.get('decision')}]" if r.get("decision") and r.get("decision") != "Unknown" else "") for r in self.bypass_rels[:6]),
+                        "impact": "Any compromise of an enterprise host has a direct path to control-system assets; ISA/IEC 62443 and NIST SP 800-82 both expect these flows to terminate in a DMZ.",
+                        "recommendation": "Confirm the level assignments, then design DMZ-terminated replacements (historian replica, jump host, file transfer broker) for each flow.",
+                        "closure": "No Level ≤3 to Level ≥5 relationship remains, or each is documented as approved with compensating controls.",
+                        "links": _links(self.bypass_rels)})
+        if self.other_unexpected:
+            detail = "; ".join(f"{r['endpoint_a']} ↔ {r['endpoint_b']} ({r.get('protocols')}; {r.get('crossing') or 'within level'})" for r in self.other_unexpected[:8])
+            out.append({"id": f"OBS-{len(out) + 1:02d}", "draft_key": "unexpected-other", "title": "Communications marked unexpected against the conduit baseline", "rating": "High priority", "confidence": "High", "owner": "OT security / firewall owner",
+                        "condition": f"{len(self.other_unexpected)} observed relationship(s) were reviewed by the assessor and marked Unexpected: {detail}.",
                         "evidence": "Passive flow evidence plus assessor conduit decisions recorded in the tool.",
                         "impact": "Unexpected pathways are undocumented attack and failure paths; they typically indicate a missing firewall rule, a bridged network, a vendor connection or a misconfigured host.",
                         "recommendation": "Trace each unexpected relationship to its physical and logical path, decide whether it is required, and either document it as an approved conduit with a control or remove it under change control.",
-                        "closure": "No relationship in the register remains marked Unexpected without an owner and remediation date."})
-        if self.bypass_rels and not self.unexpected_rels:
-            out.append({"id": f"OBS-{len(out) + 1:02d}", "title": "Direct OT-to-enterprise communications bypass the industrial DMZ", "rating": "High priority", "confidence": "Moderate", "owner": "OT network owner",
-                        "condition": f"{len(self.bypass_rels)} relationship(s) connect assets at Purdue Level 3 or below directly to Level 4/5 assets with no industrial DMZ in between.",
-                        "evidence": "; ".join(f"{r['endpoint_a']} ({r['level_a']}) ↔ {r['endpoint_b']} ({r['level_b']}): {r.get('protocols')}" for r in self.bypass_rels[:6]),
-                        "impact": "Any compromise of an enterprise host has a direct path to control-system assets; ISA/IEC 62443 and NIST SP 800-82 both expect these flows to terminate in a DMZ.",
-                        "recommendation": "Confirm the level assignments, then design DMZ-terminated replacements (historian replica, jump host, file transfer broker) for each flow.",
-                        "closure": "No Level ≤3 to Level ≥5 relationship remains, or each is documented as approved with compensating controls."})
+                        "closure": "No relationship in the register remains marked Unexpected without an owner and remediation date.",
+                        "links": _links(self.other_unexpected)})
         if self.unreviewed_crossings and self.zones.get("assigned"):
             out.append({"id": f"OBS-{len(out) + 1:02d}", "title": "Boundary-crossing communications not yet reviewed against a conduit baseline", "rating": "Moderate", "confidence": "High", "owner": "Assessment team / OT engineering",
                         "condition": f"{len(self.unreviewed_crossings)} of {len(self.crossing_rels)} relationship(s) that cross a Purdue level or reach an external endpoint have no conduit decision.",

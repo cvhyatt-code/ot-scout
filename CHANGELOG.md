@@ -2,6 +2,12 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.12.0 — 2026-09-05
+- Findings now link to the evidence they cite: `finding_links` table (kinds `relationship`, `asset`, `pair`); every auto-draft carries its links; `Store.findings_for(kind, key)` answers "which findings cite this conduit / asset / zone pair" (a zone-pair query also matches findings linked to relationships inside it). `save_finding` accepts `links`; `link_finding` / `unlink_finding` for manual edits. Register rows carry `links` in `/api/findings`.
+- Draft import matches on a stable `draft_key` instead of the title, so retitling a finding no longer causes a re-import to duplicate it; existing registers are back-filled by title once.
+- Conduit drafts split by crossing class: OT-to-external/internet, DMZ bypass, other unexpected. The DMZ-bypass draft is no longer suppressed when something is marked Unexpected (previously an internet-facing camera and two DMZ bypasses landed in one finding whose title mentioned neither). Bypass draft confidence rises to High when any of its relationships is marked Unexpected.
+- New draft "OT assets communicate directly with external or internet endpoints" (SR 5.1/5.2/5.4; T0883/T0822/T0886).
+
 ## v0.11.1 — 2026-09-05
 - PCAP import is refused while a live capture is running (the Import button is disabled with the reason). The drop storm in v0.11.0's notes turned out to have happened during an import: parsing a file in the request thread competes with the live reader for the CPU and the SQLite lock, and the old 200 KB socket buffer had no chance. Same guard the app already applies to reset, data-set switch and vendor update. 84 tests.
 

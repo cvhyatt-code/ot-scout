@@ -502,7 +502,7 @@ class Demo:
                 updates.update(status="Rejected")  # core-switch SPAN legitimately carries several VLANs
             if "Network legs" in f["title"]:
                 updates.update(owner="IT network lead", horizon="Immediate / quick win", status="Validated")
-            if "unexpected" in f["title"].lower():
+            if "bypass the industrial dmz" in f["title"].lower():
                 updates.update(kind="Control deficiency", rating="High priority", owner="IT security / OT engineering", horizon="Immediate / quick win",
                                title="Enterprise-to-OT communications bypass the documented industrial DMZ",
                                condition="The historian is joined to the enterprise Active Directory and receives SMB sessions from the enterprise domain controller; the plant manager's enterprise workstation opens RDP directly to the primary SCADA server. Drawing WTP-NET-004 shows an OT DMZ that these flows do not traverse.",

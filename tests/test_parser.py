@@ -572,7 +572,7 @@ class ZoneConduitTests(unittest.TestCase):
             self.assertTrue(svg.startswith("<svg") and "Level 1" in svg and "External" in svg and "→ Level 1" in svg)
             a = Analysis(collect(store), False)
             titles = [f["title"] for f in a.findings]
-            self.assertTrue(any("marked unexpected" in t for t in titles))
+            self.assertTrue(any("bypass the industrial DMZ" in t for t in titles))  # the unexpected rel here is an L1↔L4 bypass
             self.assertTrue(any("not yet reviewed" in t for t in titles))
             doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
             self.assertIn("Purdue zone assignment and boundary crossings", doc)
