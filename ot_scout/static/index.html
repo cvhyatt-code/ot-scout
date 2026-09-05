@@ -32,7 +32,7 @@
  <div class="panel stat"><strong id="packetCount">0</strong><span>Packets observed</span></div>
  <div class="panel stat"><strong id="sessionCount">0</strong><span>Collection sessions</span></div>
 </section>
-<section class="panel"><div class="toolbar"><h2>Import an existing Ethernet PCAP</h2><div class="row"><input type="file" id="pcap" accept=".pcap,.cap"><button id="import">Import</button></div></div><div class="muted">Prototype limit: 100 MB classic Ethernet PCAP. Imported visibility depends on the original collection point.</div></section>
+<section class="panel"><div class="toolbar"><h2>Import an existing Ethernet PCAP</h2><div class="row"><input type="file" id="pcap" accept=".pcap,.cap"><button id="import">Import</button></div></div><div class="muted">Limit: 512 MB classic Ethernet PCAP (read into memory during import). Imported visibility depends on the original collection point.</div></section>
 <section class="panel"><div class="toolbar"><h2>Collection sessions</h2><span class="sub">Every capture and PCAP import is a session; durations feed the report.</span></div><div class="scroll"><table><thead><tr><th>Assessment</th><th>Site</th><th>Collection point</th><th>Access/source</th><th>Interface/file</th><th>Frames</th><th>Dropped</th><th>PCAP</th><th>Started</th><th>Duration</th></tr></thead><tbody id="sessions"></tbody></table></div></section>
 </div>
 <div class="tab" data-pane="sites" hidden>

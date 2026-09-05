@@ -20,7 +20,7 @@ from .store import Store
 
 STATIC = Path(__file__).parent / "static"
 ROOT = Path(__file__).resolve().parent.parent
-MAX_UPLOAD = 100 * 1024 * 1024
+MAX_UPLOAD = 512 * 1024 * 1024
 
 DOCS = {"changelog": ("CHANGELOG.md", "No changelog shipped with this build."),
         "guide": ("ASSESSMENT_GUIDE.md", "No assessment guide shipped with this build.")}

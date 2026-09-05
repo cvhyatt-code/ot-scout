@@ -2,6 +2,10 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.7.1 — 2026-09-05
+- First real-traffic validation of the OPC UA decoder: a capture of an opcua-asyncio 2.x server and client (loopback, anonymous session then a user-name session) is now a fixture in `tests/fixtures/` with a regression test. Every expected claim came out of real bytes — server application name and product URI, endpoint, security policy/mode/tokens offered, client application, anonymous vs "User name (operator)" — and the password never appears anywhere.
+- PCAP import limit raised from 100 MB to 512 MB so the public 4SICS captures (25/134/200 MB) fit. The file is read into memory during import.
+
 ## v0.7.0 — 2026-09-05
 - Capture throughput: frames are now written to the database in batches (one transaction per 200 frames or 250 ms) instead of one connection-and-commit per packet. Measured on a synthetic 100-device mix: 1,046 → 12,800 packets/second on this machine; the parser itself does ~130,000/s, so the database is still the ceiling, but it is now a ceiling most SPAN ports sit under. PCAP import batches the same way.
 - Dropped-frame accounting: the capture reads the socket's own PACKET_STATISTICS every second and accumulates kernel drops — frames the OS discarded because the collector was too slow. Shown live on the Collect tab (in red, with what to do about it), stored per session, printed in the sessions table, in the report's coverage section (an amber callout when any session dropped frames, since the inventory for that session is incomplete in an unknown way) and in the evidence manifest. Previously a struggling laptop would have reported "mirror visibility" with no hint it missed anything.

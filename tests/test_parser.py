@@ -1042,3 +1042,24 @@ class EvidenceTests(unittest.TestCase):
                     self.assertIn("frames=1 recorded=0 dropped=0", manifest)
             finally:
                 Path(path).unlink()
+
+
+class RealCaptureTests(unittest.TestCase):
+    """Fixtures captured from real implementations, not built from the spec by hand."""
+
+    def test_opcua_asyncua_capture(self):
+        # opcua-asyncio 2.x server + client on loopback: Hello/OPN/CreateSession/ActivateSession (anonymous, then user name)
+        from ot_scout.capture import iter_pcap
+        data = (Path(__file__).parent / "fixtures" / "opcua-asyncua.pcap").read_bytes()
+        obs = [o for o in (parse_ethernet(f, ts) for ts, f in iter_pcap(data)) if o]
+        self.assertEqual(len(obs), 114)
+        self.assertTrue(all(o.app_protocol == "OPC-UA" for o in obs))
+        # loopback frames have a zero MAC (no asset in the store), so check the decoded claims directly
+        fps = {(k, v) for o in obs for k, v, _, _ in o.fingerprints + o.dst_fingerprints}
+        if True:
+            for expected in [("opcua_application", "Riverbend Filter PLC OPC UA Server"), ("opcua_product", "urn:otscout-test:asyncua"),
+                             ("opcua_endpoint", "opc.tcp://127.0.0.1:4840/riverbend/plc"), ("opcua_security_policies", "None"),
+                             ("opcua_user_tokens", "Anonymous, Certificate, User name"), ("opcua_auth", "Anonymous"),
+                             ("opcua_auth", "User name (operator)"), ("software", "FreeOpcUa (open source)"), ("role", "OPC UA server"), ("role", "OPC UA client")]:
+                self.assertIn(expected, fps)
+            self.assertFalse(any("wrong-password" in v for _, v in fps))
