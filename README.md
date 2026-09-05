@@ -8,7 +8,7 @@ It is an assessment aid for an authorized engagement, not a monitoring platform.
 
 Capture opens a raw socket on the chosen interface in promiscuous mode and reads frames. There is no code path that transmits: no scanning, no probing, no queries to any device, no credentials for anything. Nothing on the OT network ever talks to the collection laptop — it only sees a copy of traffic from a SPAN/mirror port or a TAP. If all you have is an ordinary access port, the tool tells you so (Visibility confidence on the Collect tab) instead of pretending it saw everything.
 
-Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification, EtherNet/IP ListIdentity, BACnet I-Am, DNP3, Siemens S7comm, Profinet DCP, plus the usual IT protocols for context (RDP, SMB, LDAP, SNMP, Telnet, OPC-UA…).
+Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification, EtherNet/IP (ListIdentity and explicit Identity-object reads), OPC UA (endpoints, application/product identity, security policies, authentication), BACnet I-Am, DNP3, Siemens S7comm, Profinet DCP, plus the usual IT protocols for context (RDP, SMB, LDAP, SNMP, Telnet…).
 
 ## Requirements
 
@@ -21,7 +21,7 @@ Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification,
 ```bash
 git clone https://github.com/<you>/ot-scout.git
 cd ot-scout
-python3 -m unittest discover -s tests   # 34 tests
+python3 -m unittest discover -s tests   # 47 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
 ```
 
@@ -48,7 +48,10 @@ run.py                 start the web app
 demo.py                build the demonstration database
 ot_scout/
   capture.py           raw-socket capture, PCAP import, rate limiter
-  parser.py            Ethernet/IP/industrial-protocol decoders
+  parser.py            Ethernet/IP/industrial-protocol decoders and dispatch
+  opcua.py             OPC UA binary-transport decoder
+  cip.py               EtherNet/IP explicit messaging (CIP Identity object) decoder
+  frameworks.py        IEC 62443 / ATT&CK for ICS catalogues and draft-finding mapping
   store.py             SQLite store, inventory/relationship/zone logic, SVG diagram
   report.py            analysis, draft findings, .docx generation (stdlib only)
   vendor.py            IEEE OUI lookup

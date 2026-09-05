@@ -363,6 +363,10 @@ class Store:
                     self._ip(db, src_asset, obs.src_ip, "PN-DCP IP parameter", 95, seen)
             for field, value, evidence, confidence in obs.fingerprints:
                 self._fingerprint(db, src_asset, field, value, evidence, confidence, seen)
+            for field, value, evidence, confidence in obs.dst_fingerprints:
+                self._fingerprint(db, dst_asset, field, value, evidence, confidence, seen)
+            for name, evidence in obs.dst_name_claims:
+                self._name(db, dst_asset, name, evidence, 80, seen)
             for ip, name in obs.name_claims:
                 if not endpoint_ip(ip) or not name:
                     continue
@@ -546,7 +550,8 @@ class Store:
     INDUSTRIAL_SERVER_PORTS = {502: "Modbus/TCP", 20000: "DNP3", 102: "S7comm", 44818: "EtherNet/IP", 2222: "EtherNet/IP I/O",
                                47808: "BACnet/IP", 4840: "OPC UA", 1883: "MQTT", 8883: "MQTT/TLS"}
     LEVEL1_ROLES = ("DNP3 outstation", "Siemens S7 controller", "Modbus device", "EtherNet/IP device", "BACnet device", "Profinet IO device", "Profinet device")
-    LEVEL2_ROLES = ("DNP3 master", "S7 client (engineering/HMI/SCADA)", "Profinet IO controller", "Profinet controller/supervisor")
+    LEVEL2_ROLES = ("DNP3 master", "S7 client (engineering/HMI/SCADA)", "Profinet IO controller", "Profinet controller/supervisor", "EtherNet/IP client (HMI/engineering)", "HMI")
+    LEVEL1_ROLES = LEVEL1_ROLES + ("PLC (EtherNet/IP)", "Drive", "I/O adapter", "Safety I/O", "Motion controller", "Pneumatic valve terminal", "Communications adapter")
 
     def _suggest_level(self, role_index: dict, item: dict, fingerprints: list[dict], trusted_ips: list[str], protocols: set[str]) -> tuple[str, int, str]:
         """Suggest a Purdue level from protocol role, fingerprint role and device type. Returns (level, confidence, evidence)."""

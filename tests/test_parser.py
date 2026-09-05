@@ -787,3 +787,184 @@ class FrameworkReferenceTests(unittest.TestCase):
             doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
             self.assertIn("Framework references", doc)
             self.assertIn("SR 5.1 Network segmentation", doc)
+
+
+def _ua_string(s):
+    if s is None:
+        return struct.pack("<i", -1)
+    raw = s.encode()
+    return struct.pack("<i", len(raw)) + raw
+
+
+def _ua_bytes(b):
+    return struct.pack("<i", -1) if b is None else struct.pack("<i", len(b)) + b
+
+
+def _ua_localized(text):
+    return b"\x02" + _ua_string(text)
+
+
+def _ua_nodeid4(ident):
+    return b"\x01\x00" + struct.pack("<H", ident)
+
+
+def _ua_app(uri, product, name, app_type):
+    return _ua_string(uri) + _ua_string(product) + _ua_localized(name) + struct.pack("<I", app_type) + _ua_string(None) + _ua_string(None) + struct.pack("<i", 0)
+
+
+def _ua_request_header():
+    return b"\x00\x00" + struct.pack("<qIII", 0, 1, 0, 0)[:0] + struct.pack("<q", 0) + struct.pack("<I", 1) + struct.pack("<I", 0) + _ua_string(None) + struct.pack("<I", 10000) + b"\x00\x00\x00"
+
+
+def _ua_response_header():
+    return struct.pack("<q", 0) + struct.pack("<I", 1) + struct.pack("<I", 0) + b"\x00" + struct.pack("<i", 0) + b"\x00\x00\x00"
+
+
+def _ua_message(kind, body, is_final=b"F"):
+    return kind + is_final + struct.pack("<I", 8 + len(body)) + body
+
+
+def _ua_msg(type_id, body):
+    return _ua_message(b"MSG", struct.pack("<IIII", 7, 1, 1, 1) + _ua_nodeid4(type_id) + body)
+
+
+def _tcp_frame(src_ip, dst_ip, sport, dport, payload, src_mac="00:1c:06:11:22:33", dst_mac="00:aa:bb:cc:dd:ee"):
+    return ethernet(dst_mac, src_mac, 0x0800, _ipv4(src_ip, dst_ip, 6, _tcp(sport, dport, payload)))
+
+
+class OpcUaDecoderTests(unittest.TestCase):
+    def test_hello_names_the_server_for_the_receiver(self):
+        body = struct.pack("<IIIII", 0, 65536, 65536, 0, 0) + _ua_string("opc.tcp://plc-line3.plant.local:4840/UA")
+        obs = parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_message(b"HEL", body)), 1.0)
+        self.assertEqual(obs.app_protocol, "OPC-UA")
+        self.assertEqual(dict((f[0], f[1]) for f in obs.fingerprints)["role"], "OPC UA client")
+        dst = dict((f[0], f[1]) for f in obs.dst_fingerprints)
+        self.assertEqual(dst["role"], "OPC UA server")
+        self.assertEqual(dst["opcua_endpoint"], "opc.tcp://plc-line3.plant.local:4840/UA")
+        self.assertEqual(obs.dst_name_claims, [("plc-line3.plant.local", "OPC UA endpoint URL")])
+
+    def test_opcua_is_recognised_on_a_non_standard_port(self):
+        body = struct.pack("<IIIII", 0, 65536, 65536, 0, 0) + _ua_string("opc.tcp://10.2.1.10:48010")
+        obs = parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 48010, _ua_message(b"HEL", body)), 1.0)
+        self.assertEqual(obs.app_protocol, "OPC-UA")
+        self.assertEqual(obs.dst_name_claims, [])  # host is an address, not a name
+
+    def test_open_secure_channel_reports_policy_and_certificate_cn(self):
+        cn = b"\x06\x03\x55\x04\x03\x0c\x0fKEPServerEX/UA"[:0]  # placeholder, built below
+        der = b"\x30\x10" + b"\x06\x03\x55\x04\x03" + b"\x0c\x0e" + b"KEPServerEX/UA"
+        body = struct.pack("<I", 0) + _ua_string("http://opcfoundation.org/UA/SecurityPolicy#None") + _ua_bytes(der) + _ua_bytes(None)
+        body += struct.pack("<II", 1, 1) + _ua_nodeid4(446)
+        obs = parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_message(b"OPN", body)), 1.0)
+        fp = dict((f[0], f[1]) for f in obs.fingerprints)
+        self.assertEqual(fp["opcua_security_policy"], "None")
+        self.assertEqual(fp["opcua_certificate_cn"], "KEPServerEX/UA")
+        self.assertEqual(fp["role"], "OPC UA client")
+
+    def test_create_session_request_describes_client_and_server(self):
+        body = _ua_request_header() + _ua_app("urn:scada01:Kepware.KEPServerEX.V6", "urn:kepware.com:KEPServerEX", "KEPServerEX/UA Client", 1)
+        body += _ua_string("urn:plc-line3:Siemens:S7-1500") + _ua_string("opc.tcp://plc-line3:4840") + _ua_string("KEP session 1")
+        body += _ua_bytes(b"\x00" * 32) + _ua_bytes(None) + struct.pack("<d", 60000.0) + struct.pack("<I", 0)
+        obs = parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_msg(461, body)), 1.0)
+        fp = dict((f[0], f[1]) for f in obs.fingerprints)
+        self.assertEqual(fp["role"], "OPC UA client")
+        self.assertEqual(fp["opcua_application"], "KEPServerEX/UA Client")
+        self.assertEqual(fp["software"], "PTC Kepware")
+        self.assertNotIn("manufacturer", fp)  # software vendor, not the box's maker
+        dst = dict((f[0], f[1]) for f in obs.dst_fingerprints)
+        self.assertEqual(dst["opcua_endpoint"], "opc.tcp://plc-line3:4840")
+        self.assertEqual(dst["opcua_application_uri"], "urn:plc-line3:Siemens:S7-1500")
+
+    def test_get_endpoints_response_describes_server_security_and_vendor(self):
+        server = _ua_app("urn:plc-line3:Siemens:S7-1500", "http://siemens.com/simatic-s7-opcua", "SIMATIC.S7-1500.OPC-UA.Application:PLC_1", 0)
+        def endpoint(mode, policy, tokens):
+            e = _ua_string("opc.tcp://plc-line3:4840") + server + _ua_bytes(None) + struct.pack("<I", mode) + _ua_string(policy)
+            e += struct.pack("<i", len(tokens))
+            for t in tokens:
+                e += _ua_string("p") + struct.pack("<I", t) + _ua_string(None) + _ua_string(None) + _ua_string(None)
+            return e + _ua_string("http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary") + b"\x00"
+        body = _ua_response_header() + struct.pack("<i", 2) + endpoint(1, "http://opcfoundation.org/UA/SecurityPolicy#None", [0, 1]) + endpoint(3, "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256", [1])
+        obs = parse_ethernet(_tcp_frame("10.2.1.10", "10.2.1.50", 4840, 49000, _ua_msg(431, body)), 1.0)
+        fp = dict((f[0], f[1]) for f in obs.fingerprints)
+        self.assertEqual(fp["role"], "OPC UA server")
+        self.assertEqual(fp["manufacturer"], "Siemens")
+        self.assertEqual(fp["opcua_security_modes"], "None, SignAndEncrypt")
+        self.assertEqual(fp["opcua_security_policies"], "Basic256Sha256, None")
+        self.assertEqual(fp["opcua_user_tokens"], "Anonymous, User name")
+
+    def test_activate_session_reports_anonymous_and_username_auth(self):
+        prefix = _ua_request_header() + _ua_string(None) + _ua_bytes(None) + struct.pack("<i", 0) + struct.pack("<i", 0)
+        anon = prefix + _ua_nodeid4(321) + b"\x01" + _ua_bytes(_ua_string("anon")) + _ua_string(None) + _ua_bytes(None)
+        fp = dict((f[0], f[1]) for f in parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_msg(467, anon)), 1.0).fingerprints)
+        self.assertEqual(fp["opcua_auth"], "Anonymous")
+        token = _ua_string("username") + _ua_string("operator") + _ua_bytes(b"secret") + _ua_string(None)
+        user = prefix + _ua_nodeid4(324) + b"\x01" + _ua_bytes(token) + _ua_string(None) + _ua_bytes(None)
+        fp = dict((f[0], f[1]) for f in parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_msg(467, user)), 1.0).fingerprints)
+        self.assertEqual(fp["opcua_auth"], "User name (operator)")
+        self.assertFalse(any("secret" in f[1] for f in parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_msg(467, user)), 1.0).fingerprints))
+
+    def test_encrypted_body_yields_nothing_but_no_crash(self):
+        import os
+        body = struct.pack("<IIII", 7, 1, 1, 1) + os.urandom(200)
+        obs = parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_message(b"MSG", body)), 1.0)
+        self.assertEqual(obs.app_protocol, "OPC-UA")
+        self.assertEqual(obs.fingerprints, [])
+
+    def test_store_attributes_receiver_claims_to_the_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "t.db"))
+            sid = store.begin_session("a", "s", "p", "eth0", "live", "Configured SPAN/mirror")
+            body = struct.pack("<IIIII", 0, 65536, 65536, 0, 0) + _ua_string("opc.tcp://plc-line3.plant.local:4840")
+            store.record(sid, parse_ethernet(_tcp_frame("10.2.1.50", "10.2.1.10", 49000, 4840, _ua_message(b"HEL", body)), 1.0))
+            server = next(a for a in store.assets() if a["mac"] == "00:aa:bb:cc:dd:ee")
+            self.assertEqual(server["name"], "plc-line3.plant.local")
+            self.assertEqual(server["display_type"], "OPC UA server")
+
+
+def _enip(command, context, cpf_items, session=1):
+    body = struct.pack("<IH", 0, 0) + struct.pack("<H", len(cpf_items)) + b"".join(struct.pack("<HH", t, len(d)) + d for t, d in cpf_items)
+    return struct.pack("<HHII", command, len(body), session, 0) + context + struct.pack("<I", 0) + body
+
+
+class EnipExplicitTests(unittest.TestCase):
+    def test_get_attributes_all_on_identity_is_paired_with_its_request(self):
+        ctx = b"OTSCOUT1"
+        request = bytes([0x01, 0x02, 0x20, 0x01, 0x24, 0x01])  # Get_Attributes_All, class 1 instance 1
+        req_frame = _tcp_frame("10.3.0.5", "10.3.0.20", 51000, 44818, _enip(0x6F, ctx, [(0, b""), (0xB2, request)]), "00:aa:00:00:00:01", "00:aa:00:00:00:02")
+        fp = dict((f[0], f[1]) for f in parse_ethernet(req_frame, 1.0).fingerprints)
+        self.assertEqual(fp["role"], "EtherNet/IP client (HMI/engineering)")
+        name = b"1756-L83E/B"
+        identity = struct.pack("<HHHBBHI", 1, 0x0E, 166, 32, 11, 0x0060, 0x00C0FFEE) + bytes([len(name)]) + name + b"\x03"
+        response = bytes([0x81, 0x00, 0x00, 0x00]) + identity
+        rsp_frame = _tcp_frame("10.3.0.20", "10.3.0.5", 44818, 51000, _enip(0x6F, ctx, [(0, b""), (0xB2, response)]), "00:aa:00:00:00:02", "00:aa:00:00:00:01")
+        obs = parse_ethernet(rsp_frame, 1.0)
+        fp = dict((f[0], f[1]) for f in obs.fingerprints)
+        self.assertEqual(fp["manufacturer"], "Rockwell Automation / Allen-Bradley")
+        self.assertEqual(fp["role"], "PLC (EtherNet/IP)")
+        self.assertEqual(fp["model"], "1756-L83E/B")
+        self.assertEqual(fp["firmware"], "32.011")
+        self.assertEqual(fp["serial"], "00C0FFEE")
+        self.assertEqual(fp["cip_device_type"], "Programmable Logic Controller")
+        # a second, unpaired response is ignored
+        self.assertEqual(parse_ethernet(rsp_frame, 1.0).fingerprints, [])
+
+    def test_unconnected_send_wrapper_and_single_attribute(self):
+        ctx = b"OTSCOUT2"
+        embedded = bytes([0x0E, 0x03, 0x20, 0x01, 0x24, 0x01, 0x30, 0x07])  # Get_Attribute_Single identity attr 7 (product name)
+        ucs = bytes([0x52, 0x02, 0x20, 0x06, 0x24, 0x01, 0x0A, 0x05]) + struct.pack("<H", len(embedded)) + embedded + bytes([0x01, 0x00, 0x01, 0x00])
+        req = _tcp_frame("10.3.0.5", "10.3.0.20", 51001, 44818, _enip(0x6F, ctx, [(0, b""), (0xB2, ucs)]), "00:aa:00:00:00:01", "00:aa:00:00:00:02")
+        parse_ethernet(req, 1.0)
+        name = b"PowerFlex 755"
+        rsp = _tcp_frame("10.3.0.20", "10.3.0.5", 44818, 51001, _enip(0x6F, ctx, [(0, b""), (0xB2, bytes([0x8E, 0, 0, 0, len(name)]) + name)]), "00:aa:00:00:00:02", "00:aa:00:00:00:01")
+        fp = dict((f[0], f[1]) for f in parse_ethernet(rsp, 1.0).fingerprints)
+        self.assertEqual(fp["model"], "PowerFlex 755")
+
+    def test_list_identity_uses_the_same_vendor_and_type_tables(self):
+        name = b"1734-AENT/B"
+        item = b"\x01\x00" + b"\x00" * 16 + struct.pack("<HHHBBHI", 1, 0x0C, 34, 5, 16, 0x0030, 0x11223344) + bytes([len(name)]) + name + b"\x03"
+        payload = struct.pack("<HHII", 0x63, 4 + len(item) + 2, 0, 0) + b"\x00" * 8 + struct.pack("<I", 0) + struct.pack("<H", 1) + struct.pack("<HH", 0x0C, len(item)) + item
+        frame = ethernet("ff:ff:ff:ff:ff:ff", "00:aa:00:00:00:03", 0x0800, _ipv4("10.3.0.30", "10.3.0.255", 17, struct.pack("!HHHH", 44818, 44818, 8 + len(payload), 0) + payload))
+        fp = dict((f[0], f[1]) for f in parse_ethernet(frame, 1.0).fingerprints)
+        self.assertEqual(fp["manufacturer"], "Rockwell Automation / Allen-Bradley")
+        self.assertEqual(fp["role"], "Communications adapter")
+        self.assertEqual(fp["firmware"], "5.016")
+        self.assertEqual(fp["model"], "1734-AENT/B")

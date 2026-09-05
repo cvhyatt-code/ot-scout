@@ -90,6 +90,7 @@ DRAFT_MAPPING = {
     "End-of-life or end-of-support OT assets in service": (["2-4 SP.11", "SR 7.8"], ["T0866", "T0890"]),
     "Controller and application backups missing or unverified": (["SR 7.3", "SR 7.4", "2-4 SP.12"], ["T0809", "T0826"]),
     "Cleartext management or file-transfer protocols observed": (["SR 4.1", "SR 4.3", "SR 1.5"], ["T0842", "T0859"]),
+    "OPC UA endpoints allow unencrypted or anonymous sessions": (["SR 1.1", "SR 1.2", "SR 3.1", "SR 4.3"], ["T0842", "T0859", "T0855", "T0830"]),
     "Industrial protocols observed; conduit approval baseline not yet established": (["SR 5.1", "SR 3.1", "SR 2.1"], ["T0855", "T0836", "T0869"]),
     "Raw evidence is retained separately from normalized relationships and inferences": ([], []),
 }

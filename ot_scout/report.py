@@ -327,6 +327,23 @@ class Analysis:
             p["flows"] += 1; p["packets"] += int(f.get("packets") or 0); p["scope"].add(f.get("traffic_scope") or "")
         self.ot_seen = {k: v for k, v in self.protocols.items() if k in OT_PROTOCOLS}
         self.cleartext_seen = {k: v for k, v in self.protocols.items() if k in CLEARTEXT_RISK}
+        # OPC UA servers advertising an unencrypted channel or anonymous logon, and clients seen using either
+        self.opcua_weak = []
+        for a in self.physical:
+            fps = {(f.get("field"), f.get("value")) for f in (a.get("fingerprints") or [])}
+            issues = []
+            if any(k == "opcua_security_policies" and "None" in (v or "").split(", ") for k, v in fps):
+                issues.append("SecurityPolicy None offered")
+            if any(k == "opcua_security_modes" and "None" in (v or "").split(", ") for k, v in fps):
+                issues.append("MessageSecurityMode None offered")
+            if any(k == "opcua_user_tokens" and "Anonymous" in (v or "") for k, v in fps):
+                issues.append("anonymous logon accepted")
+            if any(k == "opcua_auth" and v == "Anonymous" for k, v in fps):
+                issues.append("client authenticated anonymously")
+            if any(k == "opcua_security_policy" and v == "None" for k, v in fps):
+                issues.append("channel opened with SecurityPolicy None")
+            if issues:
+                self.opcua_weak.append((a, sorted(set(issues))))
         self.undocumented = [a for a in self.physical if not any(a.get(k) for k in ("location", "criticality", "purdue_level", "zone", "process_function", "owner"))]
         self.overrides = [a for a in self.assets if a.get("manual_type")]
         self.external = [r for r in self.relationships if r.get("category") == "Asset-to-external/unknown"]
@@ -496,6 +513,14 @@ class Analysis:
                         "impact": "Credentials and device configuration can be captured by anyone with the same network visibility this assessment had.",
                         "recommendation": "Confirm which devices require these services, disable unused services and prefer SSH, HTTPS, SNMPv3 or vendor-secured equivalents where supported.",
                         "closure": "Each cleartext service is either documented as operationally required with compensating controls or disabled."})
+        if self.opcua_weak:
+            detail = "; ".join(f"{self.label(a)}: {', '.join(issues)}" for a, issues in self.opcua_weak[:8])
+            out.append({"id": f"OBS-{len(out) + 1:02d}", "title": "OPC UA endpoints allow unencrypted or anonymous sessions", "rating": "Moderate", "confidence": "High", "owner": "OT engineering / SCADA owner",
+                        "condition": f"{len(self.opcua_weak)} OPC UA endpoint(s) advertise or use a security policy of None and/or anonymous logon: {detail}.",
+                        "evidence": "Decoded from OPC UA GetEndpoints/CreateSession/OpenSecureChannel/ActivateSession messages observed passively; the server's own endpoint list is the source for what it offers.",
+                        "impact": "With SecurityPolicy None the session is readable and forgeable by anyone with the network position this assessment had; anonymous logon means any such host can browse and, depending on node permissions, write process values.",
+                        "recommendation": "Disable the None policy and anonymous token on each server (keep Basic256Sha256 or Aes128_Sha256_RsaOaep with Sign&Encrypt), issue application certificates through a managed trust list, and give collectors and historians named accounts with read-only node permissions.",
+                        "closure": "GetEndpoints on each server lists no None policy and no anonymous token; existing clients reconnect with certificates and named users."})
         if self.ot_seen:
             names = ", ".join(f"{OT_PROTOCOLS[k]} ({fmt_int(v['flows'])} flows)" for k, v in sorted(self.ot_seen.items()))
             out.append({"id": f"OBS-{len(out) + 1:02d}", "title": "Industrial protocols observed; conduit approval baseline not yet established", "rating": "Informational", "confidence": "High", "owner": "OT engineering",

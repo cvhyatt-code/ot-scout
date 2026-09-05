@@ -5,6 +5,8 @@ import socket
 import struct
 from dataclasses import dataclass, field
 
+from . import cip, opcua
+
 
 APP_PORTS = {
     20: "FTP-DATA", 21: "FTP", 22: "SSH", 23: "TELNET", 25: "SMTP",
@@ -37,6 +39,8 @@ class PacketObservation:
     source_name: str = ""
     name_claims: list[tuple[str, str]] = field(default_factory=list)
     fingerprints: list[tuple[str, str, str, int]] = field(default_factory=list)
+    dst_fingerprints: list[tuple[str, str, str, int]] = field(default_factory=list)  # claims about the receiver (e.g. an OPC UA Hello names the server)
+    dst_name_claims: list[tuple[str, str]] = field(default_factory=list)  # (name, evidence) for the receiver
 
 
 def _mac(raw: bytes) -> str:
@@ -244,17 +248,7 @@ def _enip_fingerprints(payload: bytes) -> list[tuple[str, str, str, int]]:
         serial = struct.unpack("<I", data[base + 10:base + 14])[0]
         name_size = data[base + 14]
         name = _clean_text(data[base + 15:base + 15 + name_size])
-        result = [
-            ("role", "EtherNet/IP device", "EtherNet/IP ListIdentity", 95),
-            ("vendor_id", str(vendor_id), "EtherNet/IP ListIdentity", 98),
-            ("device_type", str(device_type), "EtherNet/IP ListIdentity", 98),
-            ("product_code", str(product_code), "EtherNet/IP ListIdentity", 98),
-            ("firmware", f"{major}.{minor}", "EtherNet/IP ListIdentity", 98),
-            ("serial", f"{serial:08X}", "EtherNet/IP ListIdentity", 98),
-        ]
-        if name:
-            result.append(("model", name, "EtherNet/IP product name", 98))
-        return result
+        return cip._identity_fingerprints(vendor_id, device_type, product_code, major, minor, serial, name, "EtherNet/IP ListIdentity")
     return []
 
 
@@ -544,6 +538,11 @@ def parse_ethernet(frame: bytes, timestamp: float) -> PacketObservation | None:
         obs.transport = f"IP-{proto}"
 
     obs.app_protocol = _app_protocol(obs.src_port, obs.dst_port, obs.transport)
+    if obs.transport == "TCP" and len(app_payload) >= 8 and app_payload[:3] in opcua.MESSAGE_TYPES and app_payload[3:4] in (b"F", b"C", b"A"):
+        decoded = opcua.decode(app_payload)
+        if decoded is not None:
+            obs.app_protocol = "OPC-UA"
+            obs.fingerprints.extend(decoded[0]); obs.dst_fingerprints.extend(decoded[1]); obs.dst_name_claims.extend(decoded[2])
     if obs.app_protocol == "DHCP":
         obs.source_name, obs.fingerprints = _dhcp_details(app_payload)
     if obs.app_protocol in ("DNS", "MDNS", "LLMNR"):
@@ -554,6 +553,8 @@ def parse_ethernet(frame: bytes, timestamp: float) -> PacketObservation | None:
         obs.fingerprints.extend(_modbus_fingerprints(app_payload))
     elif obs.app_protocol == "ETHERNET-IP":
         obs.fingerprints.extend(_enip_fingerprints(app_payload))
+        if obs.transport == "TCP":
+            obs.fingerprints.extend(cip.decode(app_payload, obs.src_ip, obs.src_port, obs.dst_ip, obs.dst_port))
     elif obs.app_protocol == "BACNET-IP":
         obs.fingerprints.extend(_bacnet_fingerprints(app_payload))
     elif obs.app_protocol == "DNP3":

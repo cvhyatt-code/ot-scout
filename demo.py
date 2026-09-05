@@ -45,6 +45,21 @@ def ipv4(src: str, dst: str, proto: int, payload: bytes) -> bytes:
     return bytes(hdr) + payload
 
 
+def ua_string(text):
+    if text is None:
+        return struct.pack("<i", -1)
+    raw = text.encode()
+    return struct.pack("<i", len(raw)) + raw
+
+
+def ua_bytes(raw):
+    return struct.pack("<i", -1) if raw is None else struct.pack("<i", len(raw)) + raw
+
+
+def ua_app(uri, product, name, app_type):
+    return ua_string(uri) + ua_string(product) + b"\x02" + ua_string(name) + struct.pack("<I", app_type) + ua_string(None) + ua_string(None) + struct.pack("<i", 0)
+
+
 def tcp(sport: int, dport: int, payload: bytes = b"") -> bytes:
     return struct.pack("!HHIIHHHH", sport, dport, 1, 1, 0x5018, 8192, 0, 0) + payload
 
@@ -113,6 +128,47 @@ class Demo:
             self.rec(session, eth(ma, mb, 0x0800, ipv4(ib, ia, 6 if proto == "tcp" else 17, seg(dport, sport))), n)
 
     # ---- fingerprint payloads
+    @staticmethod
+    def opcua_hello(url):
+        body = struct.pack("<IIIII", 0, 65536, 65536, 0, 0) + ua_string(url)
+        return b"HELF" + struct.pack("<I", 8 + len(body)) + body
+
+    @staticmethod
+    def opcua_msg(type_id, body):
+        body = struct.pack("<IIII", 7, 1, 1, 1) + b"\x01\x00" + struct.pack("<H", type_id) + body
+        return b"MSGF" + struct.pack("<I", 8 + len(body)) + body
+
+    @classmethod
+    def opcua_create_session_request(cls, app_uri, product_uri, app_name, server_uri, endpoint):
+        req_header = b"\x00\x00" + struct.pack("<qII", 0, 1, 0) + ua_string(None) + struct.pack("<I", 10000) + b"\x00\x00\x00"
+        body = req_header + ua_app(app_uri, product_uri, app_name, 1) + ua_string(server_uri) + ua_string(endpoint) + ua_string("Historian collector")
+        body += ua_bytes(b"\x00" * 32) + ua_bytes(None) + struct.pack("<d", 60000.0) + struct.pack("<I", 0)
+        return cls.opcua_msg(461, body)
+
+    @classmethod
+    def opcua_get_endpoints_response(cls, endpoint, app_uri, product_uri, app_name, endpoints):
+        rsp_header = struct.pack("<qII", 0, 1, 0) + b"\x00" + struct.pack("<i", 0) + b"\x00\x00\x00"
+        server = ua_app(app_uri, product_uri, app_name, 0)
+        body = rsp_header + struct.pack("<i", len(endpoints))
+        for mode, policy, tokens in endpoints:
+            body += ua_string(endpoint) + server + ua_bytes(None) + struct.pack("<I", mode) + ua_string(policy) + struct.pack("<i", len(tokens))
+            for t in tokens:
+                body += ua_string("policy") + struct.pack("<I", t) + ua_string(None) + ua_string(None) + ua_string(None)
+            body += ua_string("http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary") + b"\x00"
+        return cls.opcua_msg(431, body)
+
+    @staticmethod
+    def enip_rr(context, cip):
+        body = struct.pack("<IH", 0, 0) + struct.pack("<H", 2) + struct.pack("<HH", 0, 0) + struct.pack("<HH", 0xB2, len(cip)) + cip
+        return struct.pack("<HHII", 0x6F, len(body), 1, 0) + context + struct.pack("<I", 0) + body
+
+    @classmethod
+    def enip_identity_exchange(cls, context, vendor, device_type, product_code, major, minor, serial, name):
+        request = bytes([0x01, 0x02, 0x20, 0x01, 0x24, 0x01])
+        raw = name.encode()
+        identity = struct.pack("<HHHBBHI", vendor, device_type, product_code, major, minor, 0x0060, serial) + bytes([len(raw)]) + raw + b"\x03"
+        return cls.enip_rr(context, request), cls.enip_rr(context, bytes([0x81, 0, 0, 0]) + identity)
+
     @staticmethod
     def s7_szl_response():
         def entry(index, mlfb, bgtyp, ausbg, ausbe):
@@ -272,8 +328,20 @@ class Demo:
         cmac, cip, _ = D["cam"]
         self.rec(s, arp(cmac, cip, "10.20.9.1"), 2)
         self.flow(s, "cam", ("00:1a:a1:50:00:09", "203.0.113.9", ""), 50400, 443, n=140)
-        # OPC UA from SCADA to historian, SNMP polling from enterprise NMS to switches
+        # OPC UA from the historian (client) to SCADA-A's KEPServerEX (server): plaintext channel, anonymous allowed
         self.flow(s, "hist", "scada1", 49700, 4840, n=120)
+        hmac, hip, _ = D["hist"]; smac, sip, _ = D["scada1"]
+        self.rec(s, eth(smac, hmac, 0x0800, ipv4(hip, sip, 6, tcp(49700, 4840, self.opcua_hello("opc.tcp://wtp-scada-a.riverbend.local:4840")))), 2)
+        self.rec(s, eth(smac, hmac, 0x0800, ipv4(hip, sip, 6, tcp(49700, 4840, self.opcua_create_session_request(
+            "urn:WTP-HIST01:AVEVA:Historian", "urn:aveva.com:historian:opcua", "AVEVA Historian OPC UA collector", "urn:WTP-SCADA-A:Kepware.KEPServerEX.V6", "opc.tcp://wtp-scada-a.riverbend.local:4840")))), 2)
+        self.rec(s, eth(hmac, smac, 0x0800, ipv4(sip, hip, 6, tcp(4840, 49700, self.opcua_get_endpoints_response(
+            "opc.tcp://wtp-scada-a.riverbend.local:4840", "urn:WTP-SCADA-A:Kepware.KEPServerEX.V6", "urn:kepware.com:KEPServerEX", "KEPServerEX/UA Server",
+            [(1, "http://opcfoundation.org/UA/SecurityPolicy#None", [0, 1]), (3, "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256", [1])])))), 2)
+        # SCADA-A reads the HSP PLC's Identity object over explicit messaging (what RSLinx does on browse)
+        pmac, pip, _ = D["plc_hsp"]
+        req, rsp = self.enip_identity_exchange(b"RVBSCADA", 1, 0x0E, 0x0058, 20, 11, 0x00A1B2C3, "1756-L83E/B LOGIX5583E")
+        self.rec(s, eth(pmac, smac, 0x0800, ipv4(sip, pip, 6, tcp(49302, 44818, req))), 1)
+        self.rec(s, eth(smac, pmac, 0x0800, ipv4(pip, sip, 6, tcp(44818, 49302, rsp))), 1)
         self.flow(s, "dc", "sw_ctrl", 50500, 161, n=30, proto="udp")
         self.flow(s, "dc", "sw_proc", 50501, 161, n=30, proto="udp")
         st.end_session(s)

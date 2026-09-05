@@ -48,7 +48,10 @@ class AppServer(ThreadingHTTPServer):
             raise ValueError("Stop capture before switching data sets")
         if target == "demo":
             path = self.demo_database
-            if not Path(path).exists():
+            demo_script = Path(__file__).resolve().parent.parent / "demo.py"
+            stale = Path(path).exists() and demo_script.exists() and demo_script.stat().st_mtime > Path(path).stat().st_mtime
+            if not Path(path).exists() or stale:
+                # the demo database is derived from demo.py — rebuild it whenever the script is newer (a new build shipped)
                 self.build_demo()
             new_store = Store(path)
         elif target == "demo-rebuild":
