@@ -15,6 +15,8 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 - Fill in Assessment, Site, Collection point and Access method **before** starting — they label every session and drive the coverage verdict in the report. Be honest with Access method; "Unconfirmed access port" is the right answer until someone shows you the mirror config.
 - Start the capture. Aim for a window that covers a full operational cycle (shift change, a batch, a backwash, a polling interval) — 20 minutes of quiet plant tells you less than 2 hours.
 - Watch the **Visibility confidence** panel. If it says access-port only, stop and fix the mirror before burning time.
+- Watch the **dropped** count under the Start button. Any number above zero means the laptop could not keep up and the inventory for that session has holes you cannot see. Throttle does not help (it slows the collector further); a narrower mirror or a faster collector does.
+- Leave **Save raw PCAP** on. The pcap is the evidence of record, and it lets you re-run a capture through a later build.
 - Move to the next collection point and repeat with a new Collection point name. One session per leg is the goal.
 - Have a PCAP from someone else (vendor, IT, a previous visit)? Import it here — it becomes its own session with visibility marked unknown.
 
@@ -52,7 +54,7 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 ## 7. Report
 
 - Fill in Prepared for / Prepared by and generate the Word report. Read the coverage section first — if it says access-port visibility, so will the client, and the rest of the report has to be written with that caveat.
-- Export the assessment JSON alongside it. It is the evidence package: keep it with the engagement record so the report can be re-rendered or challenged later.
+- Click **Export evidence package**. The zip holds the JSON, the report, every export, every raw PCAP and a SHA-256 manifest — keep it with the engagement record; it is what you produce when a result is challenged. Verify any copy later with `sha256sum -c SHA256SUMS`.
 - Clear prototype data only after the exports are safely stored.
 
 ## Things that go wrong

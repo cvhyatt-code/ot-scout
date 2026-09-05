@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
+import os
 import sys
+import tempfile
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -150,6 +154,11 @@ class Handler(BaseHTTPRequestHandler):
                     "title": query.get("title", ""), "banner": query.get("banner", ""), "sanitize": query.get("sanitize") in ("1", "true", "on")}
             raw = build_report(collect(self.server.store), meta)
             return self._download("ot-scout-assessment-report.docx", raw, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        if path == "/api/export/evidence.zip":
+            query = {k: v[0].strip() for k, v in parse_qs(urlparse(self.path).query).items()}
+            meta = {"prepared_for": query.get("prepared_for", ""), "prepared_by": query.get("prepared_by", ""),
+                    "title": query.get("title", ""), "banner": query.get("banner", ""), "sanitize": query.get("sanitize") in ("1", "true", "on")}
+            return self._download_file(self.build_evidence_package(meta), "ot-scout-evidence-package.zip", "application/zip", delete=True)
         if path == "/": path = "/index.html"
         target = (STATIC / path.lstrip("/")).resolve()
         if STATIC.resolve() not in target.parents or not target.is_file():
@@ -159,6 +168,69 @@ class Handler(BaseHTTPRequestHandler):
             raw = raw.replace(b"{{VERSION}}", __version__.encode())
         self.send_response(200); self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(raw))); self.end_headers(); self.wfile.write(raw)
+
+    def build_evidence_package(self, meta: dict) -> str:
+        """Everything a client or a reviewer needs to check the work, with a SHA-256 manifest: the assessment
+        JSON, the report, every CSV/SVG export and the raw PCAP of every live session in this data set."""
+        store = self.server.store
+        stamp = __import__("time").strftime("%Y-%m-%d %H:%M:%S %Z")
+        fd, tmp_path = tempfile.mkstemp(suffix=".zip"); os.close(fd)
+        entries = []  # (name in zip, sha256, size, note)
+
+        def add_bytes(zf, name, raw, note):
+            zf.writestr(name, raw)
+            entries.append((name, hashlib.sha256(raw).hexdigest(), len(raw), note))
+
+        def add_file(zf, name, source, note):
+            h = hashlib.sha256(); size = 0
+            with open(source, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(chunk); size += len(chunk)
+            zf.write(source, name)
+            entries.append((name, h.hexdigest(), size, note))
+
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            add_bytes(zf, "assessment.json", store.json_export(), "Full evidence export (sessions, assets, relationships, sites, findings, zones)")
+            add_bytes(zf, "report.docx", build_report(collect(store), meta), "Assessment report rendered from assessment.json at packaging time")
+            for kind, name in (("assets", "assets.csv"), ("relationships", "relationships.csv"), ("discovery", "discovery-traffic.csv"), ("flows", "flows.csv")):
+                add_bytes(zf, name, store.csv_export(kind), "CSV register")
+            add_bytes(zf, "purdue-zones.svg", store.purdue_svg().encode("utf-8"), "Purdue zone and conduit diagram")
+            sessions = store.sessions()
+            for sess in sessions:
+                pcap = sess.get("pcap_path") or ""
+                if pcap and Path(pcap).is_file():
+                    add_file(zf, f"captures/{Path(pcap).name}", pcap, f"Raw capture, session {sess['id']} — {sess['collection_point']} ({sess['interface']}); {sess.get('frames') or sess['packets']} frames, {sess.get('dropped', 0)} dropped by kernel")
+            lines = [f"OT Scout evidence package — generated {stamp} by OT Scout v{__version__}",
+                     f"Data set: {self.server.database_status()['label']}",
+                     "", "Verify after extracting with:  sha256sum -c SHA256SUMS", "",
+                     "Sessions:"]
+            for sess in sessions:
+                lines.append(f"  #{sess['id']} {sess['started_at']} → {sess['ended_at'] or 'running'}  {sess['assessment']} / {sess['site']} / {sess['collection_point']}  "
+                             f"{sess['source_type']} {sess['interface']}  {sess['access_method']}  frames={sess.get('frames') or sess['packets']} recorded={sess['packets']} dropped={sess.get('dropped', 0)}"
+                             + (f"  pcap={Path(sess['pcap_path']).name}" if sess.get('pcap_path') else "  pcap=not saved"))
+            lines += ["", "Files:"]
+            for name, digest, size, note in entries:
+                lines.append(f"  {name}  {size:,} bytes  — {note}")
+            lines += ["", "SHA-256:"]
+            for name, digest, size, note in entries:
+                lines.append(f"  {digest}  {name}")
+            zf.writestr("MANIFEST.txt", "\n".join(lines) + "\n")
+            zf.writestr("SHA256SUMS", "".join(f"{digest}  {name}\n" for name, digest, size, note in entries))
+        return tmp_path
+
+    def _download_file(self, source: str, name: str, content_type: str, delete: bool = False):
+        size = os.path.getsize(source)
+        self.send_response(200); self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+        self.send_header("Content-Length", str(size)); self.end_headers()
+        try:
+            with open(source, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    self.wfile.write(chunk)
+        finally:
+            if delete:
+                try: os.unlink(source)
+                except OSError: pass
 
     def _download(self, name, raw, content_type):
         self.send_response(200); self.send_header("Content-Type", content_type)
@@ -177,7 +249,8 @@ class Handler(BaseHTTPRequestHandler):
                     rate_limit = int(data.get("rate_limit") or 0) or None
                 except (TypeError, ValueError):
                     rate_limit = None
-                session = self.server.capture.start(*(str(data[k]).strip() for k in required), rate_limit=rate_limit)
+                session = self.server.capture.start(*(str(data[k]).strip() for k in required), rate_limit=rate_limit,
+                                                    save_pcap=bool(data.get("save_pcap", True)))
                 return self._json({"ok": True, "session_id": session})
             if path == "/api/database/switch":
                 return self._json({"ok": True, **self.server.switch_database(str(self._json_body().get("target", "")))})

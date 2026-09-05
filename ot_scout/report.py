@@ -719,9 +719,16 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
         ["Capture duration", fmt_duration_words(a.total_duration), "Functional test only; silent or periodic devices may be absent" if a.total_duration < 4 * 3600 else "Extended window; daily or shift-based periodic traffic may still be absent"],
     ], [0.22, 0.30, 0.48])
     d.h2("Collection sessions")
-    d.table(["#", "Collection point", "Access / source", "Interface / file", "Started (UTC)", "Duration", "Packets", "3rd-party"], [
-        [str(s.get("id", "")), s.get("collection_point", ""), f"{s.get('access_method', '')} / {s.get('source_type', '')}", s.get("interface", ""), (s.get("started_at") or "").replace("+00:00", ""), fmt_duration_words(s.get("duration_seconds")), fmt_int(s.get("packets")), fmt_int(s.get("third_party_unicast"))]
-        for s in a.sessions], [0.04, 0.18, 0.20, 0.14, 0.16, 0.10, 0.09, 0.09], size=8)
+    d.table(["#", "Collection point", "Access / source", "Interface / file", "Started (UTC)", "Duration", "Packets", "Dropped", "PCAP"], [
+        [str(s.get("id", "")), s.get("collection_point", ""), f"{s.get('access_method', '')} / {s.get('source_type', '')}", s.get("interface", ""), (s.get("started_at") or "").replace("+00:00", ""), fmt_duration_words(s.get("duration_seconds")), fmt_int(s.get("packets")),
+         (fmt_int(s.get("dropped", 0)), RED if int(s.get("dropped") or 0) else INK, bool(s.get("dropped"))),
+         ("Retained", GREEN) if s.get("pcap_path") else ("Imported", INK) if s.get("source_type") == "pcap" else ("Not saved", MUTED)]
+        for s in a.sessions], [0.04, 0.16, 0.18, 0.12, 0.15, 0.09, 0.08, 0.08, 0.10], size=8)
+    dropped_total = sum(int(s.get("dropped") or 0) for s in a.sessions)
+    if dropped_total:
+        d.callout("Frames dropped during capture", f"The collection laptop could not keep up with the mirrored traffic in {sum(1 for s in a.sessions if int(s.get('dropped') or 0))} session(s): {fmt_int(dropped_total)} frame(s) were dropped by the operating system before the collector saw them (counted from the capture socket's own statistics). The inventory and communications for those sessions are incomplete in an unknown way — devices that spoke only during the drops are absent. Repeat the capture with a narrower mirror (per VLAN or per port) or a faster collector before drawing coverage conclusions.", AMBER_BG, AMBER)
+    else:
+        d.muted("No frames were dropped by the capture socket in any live session; the packet counts above are what the mirror delivered. Raw PCAPs are retained for sessions marked Retained and included in the evidence package.")
     if a.legs:
         d.h2("Coverage by network leg")
         d.table(["Site / network leg", "Purdue", "Evidence source", "Status", "Collected evidence", "Limitations"],

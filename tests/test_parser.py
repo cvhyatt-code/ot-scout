@@ -968,3 +968,77 @@ class EnipExplicitTests(unittest.TestCase):
         self.assertEqual(fp["role"], "Communications adapter")
         self.assertEqual(fp["firmware"], "5.016")
         self.assertEqual(fp["model"], "1734-AENT/B")
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_pcap_writer_round_trips_through_the_importer(self):
+        from ot_scout.capture import PcapWriter, iter_pcap
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "captures" / "s.pcap"
+            w = PcapWriter(path)
+            frames = [_tcp_frame("10.0.0.1", "10.0.0.2", 1000 + i, 502, b"\x00" * i) for i in range(5)]
+            for i, f in enumerate(frames):
+                w.write(f, 1_700_000_000.25 + i)
+            w.close()
+            back = list(iter_pcap(path.read_bytes()))
+            self.assertEqual([f for _, f in back], frames)
+            self.assertAlmostEqual(back[0][0], 1_700_000_000.25, places=3)
+
+    def test_session_records_frames_drops_and_pcap_path_and_migrates_old_databases(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "t.db"))
+            sid = store.begin_session("a", "s", "p", "eth0", "live", "Configured SPAN/mirror")
+            store.set_session_pcap(sid, "/x/session-001.pcap")
+            store.end_session(sid, dropped=42, frames=1000)
+            sess = store.sessions()[0]
+            self.assertEqual((sess["dropped"], sess["frames"], sess["pcap_path"]), (42, 1000, "/x/session-001.pcap"))
+            old = str(Path(tmp) / "old.db"); Store(old)
+            with sqlite3.connect(old) as db:
+                db.execute("ALTER TABLE sessions DROP COLUMN dropped"); db.execute("ALTER TABLE sessions DROP COLUMN frames"); db.execute("ALTER TABLE sessions DROP COLUMN pcap_path")
+            reopened = Store(old)
+            sid = reopened.begin_session("a", "s", "p", "eth0", "live", "Configured SPAN/mirror")
+            reopened.end_session(sid, dropped=1, frames=2)
+            self.assertEqual(reopened.sessions()[0]["dropped"], 1)
+
+    def test_record_many_matches_record_one_by_one(self):
+        frames = [_tcp_frame(f"10.0.0.{1 + i % 3}", "10.0.0.9", 40000 + i, 502, b"") for i in range(30)]
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Store(str(Path(tmp) / "a.db")), Store(str(Path(tmp) / "b.db"))
+            sa = a.begin_session("x", "s", "p", "eth0"); sb = b.begin_session("x", "s", "p", "eth0")
+            for i, f in enumerate(frames):
+                a.record(sa, parse_ethernet(f, 1.0 + i), "")
+            b.record_many(sb, [parse_ethernet(f, 1.0 + i) for i, f in enumerate(frames)], "")
+            strip = lambda rows: [{k: v for k, v in r.items() if k not in ("id", "first_seen", "last_seen")} for r in rows]
+            self.assertEqual(strip(a.connections()), strip(b.connections()))
+            self.assertEqual([x["mac"] for x in a.assets()], [x["mac"] for x in b.assets()])
+            self.assertEqual(a.sessions()[0]["packets"], b.sessions()[0]["packets"])
+
+    def test_evidence_package_manifest_hashes_verify(self):
+        import hashlib, io, zipfile
+        from ot_scout.capture import CaptureManager, PcapWriter
+        from ot_scout.web import AppServer, Handler
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "t.db"))
+            sid = store.begin_session("a", "s", "Control room", "eth0", "live", "Configured SPAN/mirror")
+            pcap = Path(tmp) / "captures" / "session-001.pcap"
+            w = PcapWriter(pcap); w.write(_tcp_frame("10.0.0.1", "10.0.0.2", 1000, 502, b""), 1.0); w.close()
+            store.set_session_pcap(sid, str(pcap)); store.end_session(sid, dropped=0, frames=1)
+            server = AppServer.__new__(AppServer)
+            server.store = store; server.capture = CaptureManager(store); server.main_database = store.path; server.demo_database = str(Path(tmp) / "demo.db")
+            handler = Handler.__new__(Handler); handler.server = server
+            path = Handler.build_evidence_package(handler, {})
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    names = set(zf.namelist())
+                    self.assertTrue({"assessment.json", "report.docx", "assets.csv", "purdue-zones.svg", "MANIFEST.txt", "captures/session-001.pcap"} <= names)
+                    manifest = zf.read("MANIFEST.txt").decode()
+                    checked = 0
+                    for line in zf.read("SHA256SUMS").decode().splitlines():
+                        digest, name = line.split("  ", 1)
+                        self.assertIn(name, names)
+                        self.assertEqual(hashlib.sha256(zf.read(name)).hexdigest(), digest); checked += 1
+                    self.assertGreaterEqual(checked, 8)
+                    self.assertIn("frames=1 recorded=0 dropped=0", manifest)
+            finally:
+                Path(path).unlink()
