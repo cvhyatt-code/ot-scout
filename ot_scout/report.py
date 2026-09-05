@@ -45,6 +45,22 @@ IT_SERVICE_PROTOCOLS = {
     "SYSLOG": "Syslog", "LDAP": "LDAP", "MS-RPC": "MS-RPC",
 }
 CLEARTEXT_RISK = {"TELNET", "FTP", "HTTP", "SNMP", "VNC", "TFTP"}
+FINGERPRINT_LABELS = {
+    "role": "Role", "manufacturer": "Manufacturer", "model": "Model / product", "firmware": "Firmware", "serial": "Serial number",
+    "software": "Software", "hostname": "Host name", "os": "Operating system", "user_agent": "HTTP user agent", "server": "HTTP server",
+    "vendor_id": "CIP vendor id", "device_type": "CIP device type code", "cip_device_type": "CIP device type", "product_code": "CIP product code",
+    "opcua_application": "OPC UA application", "opcua_application_uri": "OPC UA application URI", "opcua_product": "OPC UA product URI",
+    "opcua_endpoint": "OPC UA endpoint", "opcua_security_modes": "OPC UA security modes offered", "opcua_security_policies": "OPC UA security policies offered",
+    "opcua_user_tokens": "OPC UA user tokens accepted", "opcua_security_policy": "OPC UA channel policy used", "opcua_auth": "OPC UA authentication used",
+    "opcua_certificate_cn": "OPC UA certificate CN", "opcua_session_name": "OPC UA session name",
+    "dnp3_link_address": "DNP3 link address", "dnp3_function": "DNP3 function", "dnp3_iin": "DNP3 internal indications",
+    "s7_dst_tsap": "S7 destination TSAP", "s7_src_tsap": "S7 source TSAP", "s7_order_number": "S7 order number", "s7_module": "S7 module",
+    "pn_station_name": "Profinet station name", "pn_device_role": "Profinet role", "pn_vendor_id": "Profinet vendor id", "pn_device_id": "Profinet device id",
+    "modbus_vendor": "Modbus vendor", "modbus_product_code": "Modbus product code", "modbus_revision": "Modbus revision", "modbus_unit_id": "Modbus unit id",
+    "bacnet_device_id": "BACnet device id", "bacnet_vendor_id": "BACnet vendor id", "lldp_system": "LLDP system", "lldp_port": "LLDP port",
+    "dhcp_vendor_class": "DHCP vendor class", "dhcp_parameter_list": "DHCP parameter list",
+}
+FINGERPRINT_ORDER = {k: i for i, k in enumerate(("role", "manufacturer", "model", "firmware", "serial", "software", "hostname", "os"))}
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -327,6 +343,31 @@ class Analysis:
             p["flows"] += 1; p["packets"] += int(f.get("packets") or 0); p["scope"].add(f.get("traffic_scope") or "")
         self.ot_seen = {k: v for k, v in self.protocols.items() if k in OT_PROTOCOLS}
         self.cleartext_seen = {k: v for k, v in self.protocols.items() if k in CLEARTEXT_RISK}
+        # OPC UA servers and clients with their consolidated claims (highest-confidence value per field)
+        self.opcua_servers, self.opcua_clients = [], []
+        for a in self.physical:
+            fp: dict[str, str] = {}
+            conf: dict[str, int] = {}
+            for f in a.get("fingerprints") or []:
+                k, v, c = f.get("field", ""), f.get("value", ""), int(f.get("confidence") or 0)
+                if k.startswith("opcua_") or k in ("software", "role"):
+                    if k == "role":
+                        if v in ("OPC UA server", "OPC UA client"):
+                            fp.setdefault("roles", ""); fp["roles"] += v + ";"
+                        continue
+                    if c > conf.get(k, -1):
+                        fp[k], conf[k] = v, c
+            if "OPC UA server" in fp.get("roles", "") and any(k.startswith("opcua_") for k in fp):
+                self.opcua_servers.append((a, fp))
+            if "OPC UA client" in fp.get("roles", ""):
+                self.opcua_clients.append((a, fp))
+        # a client's endpoint claim was recorded on the server it named; find it back through relationships
+        server_by_label = {self.label(x): fp.get("opcua_endpoint", "") for x, fp in self.opcua_servers}
+        for x, fp in self.opcua_clients:
+            targets = sorted({server_by_label[r["endpoint_b"] if r["endpoint_a"] == self.label(x) else r["endpoint_a"]] for r in self.relationships
+                              if self.label(x) in (r["endpoint_a"], r["endpoint_b"]) and "OPC-UA" in (r.get("protocols") or "")
+                              and (r["endpoint_b"] if r["endpoint_a"] == self.label(x) else r["endpoint_a"]) in server_by_label} - {""})
+            fp["opcua_endpoint_target"] = ", ".join(targets)
         # OPC UA servers advertising an unencrypted channel or anonymous logon, and clients seen using either
         self.opcua_weak = []
         for a in self.physical:
@@ -725,8 +766,13 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
     d.muted(f"Source: OT Scout assessment export generated {generated}. {'MAC addresses sanitised for distribution. ' if a.sanitize else ''}Physical count excludes locally administered, low-evidence identities that are likely virtual or derived.")
     fp_rows = []
     for x in a.assets:
+        best: dict[str, dict] = {}
         for f in x.get("fingerprints") or []:
-            fp_rows.append([a.label(x), f.get("field", ""), f.get("value", ""), f.get("evidence", ""), f"{f.get('confidence', 0)}%", fmt_int(f.get("packets"))])
+            key = (f.get("field", ""), f.get("value", ""))
+            if key not in best or int(f.get("confidence") or 0) > int(best[key].get("confidence") or 0):
+                best[key] = f
+        for f in sorted(best.values(), key=lambda f: (FINGERPRINT_ORDER.get(f.get("field", ""), 99), -int(f.get("confidence") or 0))):
+            fp_rows.append([a.label(x), FINGERPRINT_LABELS.get(f.get("field", ""), f.get("field", "").replace("_", " ")), f.get("value", ""), f.get("evidence", ""), f"{f.get('confidence', 0)}%", fmt_int(f.get("packets"))])
     if a.lifecycle_rows:
         d.h2("Lifecycle observations")
         d.table(["Asset", "Manufacturer / model", "Firmware", "Installed", "EOL / EOS", "Support status", "Patch status", "Backup"],
@@ -737,11 +783,11 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
         d.muted(f"{len(a.eol)} asset(s) at end of life/support; {len(a.no_backup)} with missing or unverified backups.")
     d.h2("Passive fingerprint claims")
     if fp_rows:
-        d.table(["Asset", "Field", "Value", "Evidence", "Confidence", "Packets"], fp_rows[:60], [0.22, 0.14, 0.30, 0.14, 0.10, 0.10], size=8)
-        if len(fp_rows) > 60:
-            d.muted(f"{len(fp_rows) - 60} further fingerprint claims are in the assets export.")
+        d.table(["Asset", "Field", "Value", "Evidence", "Confidence", "Packets"], fp_rows[:120], [0.20, 0.14, 0.32, 0.16, 0.09, 0.09], size=8)
+        if len(fp_rows) > 120:
+            d.muted(f"{len(fp_rows) - 120} further fingerprint claims are in the assets export.")
     else:
-        d.para("No protocol fingerprint payloads (DHCP, HTTP, LLDP, Modbus device identification, EtherNet/IP ListIdentity, BACnet I-Am) were observed.")
+        d.para("No protocol fingerprint payloads (DHCP, HTTP, LLDP, Modbus device identification, EtherNet/IP ListIdentity or Identity-object reads, OPC UA handshakes, BACnet I-Am, DNP3, S7comm, Profinet DCP) were observed.")
     d.h2("Fingerprint confidence model")
     examples = sorted(a.physical, key=lambda v: -int(v.get("type_confidence") or 0))
     hi = next((f"{v.get('display_type')} — {v.get('type_confidence')}%" for v in examples if int(v.get("type_confidence") or 0) >= 85), "None in this data set")
@@ -784,10 +830,26 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
     d.h2("Industrial protocol observations")
     ot_rows = [[OT_PROTOCOLS[k], ("Observed", GREEN, True), fmt_int(a.protocols[k]["flows"]), fmt_int(a.protocols[k]["packets"])] if k in a.protocols else [OT_PROTOCOLS[k], ("Not observed", MUTED), "—", "—"] for k in OT_PROTOCOLS]
     d.table(["Protocol", "Status", "Flows", "Packets"], ot_rows, [0.40, 0.20, 0.20, 0.20])
-    d.muted("Not observed means not visible from the recorded collection points during the observation window. SINAUT ST7, S7comm Plus (TLS), OPC UA payloads and serial protocols are not decoded by the collector and require other evidence.")
+    d.muted("Not observed means not visible from the recorded collection points during the observation window. SINAUT ST7, S7comm Plus (TLS), OPC UA sessions under SignAndEncrypt (only the handshake is readable) and serial protocols are not decoded by the collector and require other evidence.")
     d.h2("IT service protocols observed")
     it_rows = [[IT_SERVICE_PROTOCOLS[k], fmt_int(v["flows"]), fmt_int(v["packets"]), ("Cleartext — review", AMBER, True) if k in CLEARTEXT_RISK else ""] for k, v in sorted(a.protocols.items()) if k in IT_SERVICE_PROTOCOLS]
     d.table(["Protocol", "Flows", "Packets", "Note"], it_rows or [["None observed", "", "", ""]], [0.40, 0.18, 0.18, 0.24])
+    if a.opcua_servers or a.opcua_clients:
+        d.h2("OPC UA endpoints and sessions")
+        d.para("Decoded from the OPC UA handshake (Hello, OpenSecureChannel, GetEndpoints, CreateSession, ActivateSession). What a server offers comes from its own endpoint list; what a client used comes from the session it opened. Under SignAndEncrypt only the handshake is visible, so an absent value means not observed, not not configured.")
+        srv_rows = []
+        for x, fp in a.opcua_servers:
+            weak = "None" in fp.get("opcua_security_policies", "").split(", ") or "None" in fp.get("opcua_security_modes", "").split(", ") or "Anonymous" in fp.get("opcua_user_tokens", "")
+            srv_rows.append([[a.label(x), fp.get("opcua_endpoint", "")], [fp.get("opcua_application", "") or "—", fp.get("opcua_product", "")],
+                             (fp.get("opcua_security_modes", "—"), RED if "None" in fp.get("opcua_security_modes", "").split(", ") else INK),
+                             (fp.get("opcua_security_policies", "—"), RED if "None" in fp.get("opcua_security_policies", "").split(", ") else INK),
+                             (fp.get("opcua_user_tokens", "—"), RED if "Anonymous" in fp.get("opcua_user_tokens", "") else INK),
+                             ("Review", RED, True) if weak else ("", INK)])
+        d.table(["Server / endpoint", "Application / product", "Security modes", "Policies", "User tokens", ""], srv_rows or [["No OPC UA server endpoint list observed", "", "", "", "", ""]], [0.24, 0.22, 0.14, 0.18, 0.14, 0.08], size=8)
+        cli_rows = [[a.label(x), fp.get("opcua_application", "") or fp.get("software", "") or "—", fp.get("opcua_endpoint_target", "—"),
+                     (fp.get("opcua_auth", "—"), RED if fp.get("opcua_auth", "").startswith("Anonymous") else INK),
+                     (fp.get("opcua_security_policy", "—"), RED if fp.get("opcua_security_policy") == "None" else INK)] for x, fp in a.opcua_clients]
+        d.table(["Client", "Application", "Connects to", "Authentication used", "Channel policy used"], cli_rows or [["No OPC UA client session observed", "", "", "", ""]], [0.22, 0.26, 0.22, 0.16, 0.14], size=8)
     d.h2("Broadcast and service-discovery traffic")
     disc = sorted(a.discovery, key=lambda x: -int(x.get("packets") or 0))[:12]
     d.table(["Source", "Destination", "Protocol", "Flows", "Packets"], [[x.get("source", ""), x.get("destination", ""), x.get("protocol", ""), fmt_int(x.get("flows")), fmt_int(x.get("packets"))] for x in disc] or [["None observed", "", "", "", ""]], [0.28, 0.28, 0.20, 0.12, 0.12], size=8)

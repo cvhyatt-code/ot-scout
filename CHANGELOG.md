@@ -2,6 +2,12 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.6.1 — 2026-09-05
+- Report: new "OPC UA endpoints and sessions" section under Communications — one table of servers (endpoint, application/product, security modes, policies, user tokens, with None/Anonymous in red and a Review flag) and one of clients (application, which server it connects to, how it authenticated, which channel policy it used).
+- Report: the passive-fingerprint table now uses readable labels ("OPC UA security policies offered", "CIP device type", "S7 order number") instead of internal field names, keeps only the best claim per field/value per asset instead of one row per evidence source, orders role/manufacturer/model/firmware/serial first, and shows up to 120 rows.
+- Report: removed the sentence telling the client that OPC UA payloads are not decoded — they are now. The remaining caveat names what still isn't (SINAUT ST7, S7comm Plus, OPC UA under SignAndEncrypt beyond the handshake, serial).
+- Demo: the historian's OPC UA session now includes the OpenSecureChannel (policy None, certificate CN) and an anonymous ActivateSession, so the client table and the draft finding show the full case.
+
 ## v0.6.0 — 2026-09-05
 - OPC UA decoder. Recognised by its message signature on any TCP port, not just 4840. From Hello, OpenSecureChannel, CreateSession, GetEndpoints, FindServers and ActivateSession it records: endpoint URL (which also names the server), application name/URI and product URI for both client and server, the security policies and modes the server offers, the user-token types it accepts, how the client actually authenticated (anonymous / user name — the user name is kept, the password never is), the sender's certificate CN, and a software vendor (Kepware, AVEVA, Ignition, Prosys, …) or, for controller-embedded servers (Siemens, Rockwell, Beckhoff, B&R, WAGO, Phoenix, Schneider, Omron), the manufacturer. Bodies are only readable on channels using SecurityPolicy None or Sign; under SignAndEncrypt you still get Hello and OpenSecureChannel. Every field is validated as it is read, so an encrypted body yields nothing rather than garbage.
 - New auto-drafted observation: "OPC UA endpoints allow unencrypted or anonymous sessions", raised when a server advertises SecurityPolicy None / MessageSecurityMode None / an anonymous token, or a client is seen using them. Mapped to SR 1.1, 1.2, 3.1, 4.3 and T0842/T0859/T0855/T0830.

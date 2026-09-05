@@ -158,6 +158,19 @@ class Demo:
         return cls.opcua_msg(431, body)
 
     @staticmethod
+    def opcua_open_channel(policy_uri, cn):
+        der = b"\x30\x10" + b"\x06\x03\x55\x04\x03" + bytes([0x0C, len(cn)]) + cn.encode()
+        body = struct.pack("<I", 0) + ua_string(policy_uri) + ua_bytes(der) + ua_bytes(None) + struct.pack("<II", 1, 1) + b"\x01\x00" + struct.pack("<H", 446)
+        return b"OPNF" + struct.pack("<I", 8 + len(body)) + body
+
+    @classmethod
+    def opcua_activate_anonymous(cls):
+        req_header = b"\x00\x00" + struct.pack("<qII", 0, 2, 0) + ua_string(None) + struct.pack("<I", 10000) + b"\x00\x00\x00"
+        body = req_header + ua_string(None) + ua_bytes(None) + struct.pack("<i", 0) + struct.pack("<i", 0)
+        body += b"\x01\x00" + struct.pack("<H", 321) + b"\x01" + ua_bytes(ua_string("anonymous")) + ua_string(None) + ua_bytes(None)
+        return cls.opcua_msg(467, body)
+
+    @staticmethod
     def enip_rr(context, cip):
         body = struct.pack("<IH", 0, 0) + struct.pack("<H", 2) + struct.pack("<HH", 0, 0) + struct.pack("<HH", 0xB2, len(cip)) + cip
         return struct.pack("<HHII", 0x6F, len(body), 1, 0) + context + struct.pack("<I", 0) + body
@@ -332,6 +345,8 @@ class Demo:
         self.flow(s, "hist", "scada1", 49700, 4840, n=120)
         hmac, hip, _ = D["hist"]; smac, sip, _ = D["scada1"]
         self.rec(s, eth(smac, hmac, 0x0800, ipv4(hip, sip, 6, tcp(49700, 4840, self.opcua_hello("opc.tcp://wtp-scada-a.riverbend.local:4840")))), 2)
+        self.rec(s, eth(smac, hmac, 0x0800, ipv4(hip, sip, 6, tcp(49700, 4840, self.opcua_open_channel("http://opcfoundation.org/UA/SecurityPolicy#None", "AVEVA Historian OPC UA Collector")))), 2)
+        self.rec(s, eth(smac, hmac, 0x0800, ipv4(hip, sip, 6, tcp(49700, 4840, self.opcua_activate_anonymous()))), 2)
         self.rec(s, eth(smac, hmac, 0x0800, ipv4(hip, sip, 6, tcp(49700, 4840, self.opcua_create_session_request(
             "urn:WTP-HIST01:AVEVA:Historian", "urn:aveva.com:historian:opcua", "AVEVA Historian OPC UA collector", "urn:WTP-SCADA-A:Kepware.KEPServerEX.V6", "opc.tcp://wtp-scada-a.riverbend.local:4840")))), 2)
         self.rec(s, eth(hmac, smac, 0x0800, ipv4(sip, hip, 6, tcp(4840, 49700, self.opcua_get_endpoints_response(
