@@ -42,7 +42,8 @@ def parse_args(argv=None):
     p.add_argument("--eval", action="store_true", help="run the eight standard evaluation questions")
     p.add_argument("--dry-run", action="store_true", help="build and print the prompt; do not call a model")
     p.add_argument("--budget", type=int, default=12000, help="max characters of evidence per prompt (default 12000)")
-    p.add_argument("--max-tokens", type=int, default=1500)
+    p.add_argument("--max-tokens", type=int, default=3000, help="reply length cap (default 3000; 1500 truncated Claude's answers mid-JSON)")
+    p.add_argument("--timeout", type=int, default=1800, help="seconds to wait for a reply (default 1800; slow local models can take a while to load and generate)")
     p.add_argument("--no-json-mode", action="store_true", help="do not ask the backend for JSON-constrained output")
     p.add_argument("--no-stream", action="store_true", help="print the answer only when complete")
     p.add_argument("--raw", action="store_true", help="print the model's raw JSON instead of the rendered sections")
@@ -110,7 +111,8 @@ def main(argv=None):
         backend = ScriptedBackend()
     else:
         try:
-            backend = make_backend(args.backend, args.model, args.url, args.api_key, json_mode=not args.no_json_mode, max_tokens=args.max_tokens)
+            backend = make_backend(args.backend, args.model, args.url, args.api_key, json_mode=not args.no_json_mode,
+                                    max_tokens=args.max_tokens, timeout=args.timeout)
         except BackendError as exc:
             sys.exit(str(exc))
     copilot = Copilot(export, backend, args.log or None, args.budget, args.log_prompts)

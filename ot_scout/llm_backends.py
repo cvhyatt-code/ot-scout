@@ -44,7 +44,7 @@ class ChatResult:
 class Backend:
     name = "base"
 
-    def __init__(self, model: str, url: str, api_key: str = "", timeout: int = 600, json_mode: bool = True,
+    def __init__(self, model: str, url: str, api_key: str = "", timeout: int = 1800, json_mode: bool = True,
                  temperature: float = 0.1, max_tokens: int = 1500):
         self.model = model
         self.url = url.rstrip("/")

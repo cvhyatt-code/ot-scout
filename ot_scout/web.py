@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .capture import interfaces
+from .copilot_service import CopilotService
 from .frameworks import catalogue
 from .report import Analysis, build_report, collect
 from .store import Store
@@ -46,6 +47,8 @@ class AppServer(ThreadingHTTPServer):
         self.quiet_status = True
         self.main_database = store.path
         self.demo_database = str(Path(store.path).parent / "demo.db")
+        data_dir = Path(store.path).parent
+        self.copilot = CopilotService(data_dir / "copilot-settings.json", data_dir / "copilot-log.jsonl")
 
     def switch_database(self, target: str) -> dict:
         if self.capture.running:
@@ -116,6 +119,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/about":
             return self._json({"version": __version__, "changelog": read_doc("changelog"), "guide": read_doc("guide")})
         if path == "/api/database": return self._json(self.server.database_status())
+        if path == "/api/copilot": return self._json(self.server.copilot.status())
         if path == "/api/vendor-status": return self._json(self.server.store.vendor_status())
         if path == "/api/assets": return self._json(self.server.store.assets_with_exposure())
         if path == "/api/summary":
@@ -260,6 +264,14 @@ class Handler(BaseHTTPRequestHandler):
                 session = self.server.capture.start(*(str(data[k]).strip() for k in required), rate_limit=rate_limit,
                                                     save_pcap=bool(data.get("save_pcap", True)))
                 return self._json({"ok": True, "session_id": session})
+            if path == "/api/copilot/settings":
+                return self._json({"ok": True, "settings": self.server.copilot.save(self._json_body())})
+            if path == "/api/copilot/test":
+                return self._json(self.server.copilot.test())
+            if path == "/api/copilot/ask":
+                question = str(self._json_body().get("question", ""))
+                export = json.loads(self.server.store.json_export())
+                return self._json({"ok": True, "answer": self.server.copilot.ask(export, question)})
             if path == "/api/database/switch":
                 return self._json({"ok": True, **self.server.switch_database(str(self._json_body().get("target", "")))})
             if path == "/api/stop":

@@ -1009,7 +1009,7 @@ class Store:
         bands = [lv for lv in order if any(band_of(a) == lv for a in physical) or lv not in ("Unassigned", "Network infrastructure")]
         if externals:
             bands.insert(0, "External")
-        width, band_h, pad, box_w, box_h = 1200, 96, 16, 150, 40
+        width, pad, box_w, box_h, label_w = 1600, 16, 160, 40, 130
         colors = {"Approved": "#18794e", "Tolerated": "#9a6700", "Unexpected": "#b42318", "Unknown": "#617181"}
         fills = {"External": "#f3e8ff", "Level 5": "#e9eff3", "Level 4": "#e9eff3", "Industrial DMZ": "#fff7d6", "Level 3": "#e3f0f5",
                  "Level 2": "#e3f0f5", "Level 1": "#e3f5ea", "Level 0": "#e3f5ea", "Network infrastructure": "#f3f6f8", "Unassigned": "#fde8e6"}
@@ -1026,44 +1026,67 @@ class Store:
             item["protocols"].update(p for p in r["protocols"].split(", ") if p)
         ordered_pairs = sorted(pairs.items(), key=lambda kv: (not kv[1]["crossing"], -kv[1]["packets"], kv[0]))
         legend_rows = len(ordered_pairs)
-        height = band_h * len(bands) + pad * 2 + 30 + 22 + legend_rows * 15
+        # Split the width between asset cards (left) and conduit lines (right) by what each actually needs:
+        # every conduit gets a 56px slot, the cards get the rest. A band with more members than fit in one
+        # row gets a second row (which makes every band taller) before folding into "+N more".
+        n_pairs = len(ordered_pairs)
+        conduit_w = max(140, min(int(width * 0.45), n_pairs * 56 + 70))
+        card_area_right = width - pad - conduit_w
+        cols = max(1, (card_area_right - (pad + label_w)) // (box_w + 10))
+        members_of = {lv: ([a for a in physical if band_of(a) == lv] if lv != "External" else []) for lv in bands}
+        band_hs = {lv: 142 if len(members_of[lv]) > cols else 96 for lv in bands}  # only a band that needs two rows gets taller
+        bands_h = sum(band_hs.values())
+        height = bands_h + pad * 2 + 30 + 22 + legend_rows * 15
         out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="system-ui, sans-serif" font-size="12">',
                f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
                f'<text x="{pad}" y="{pad + 4}" font-size="16" font-weight="700" fill="#112d3a">Purdue zones and observed conduits</text>']
         y_of = {}
-        for i, lv in enumerate(bands):
-            y = pad + 30 + i * band_h
+        y = pad + 30
+        for lv in bands:
+            band_h = band_hs[lv]
             y_of[lv] = y
             out.append(f'<rect x="{pad}" y="{y}" width="{width - 2 * pad}" height="{band_h - 6}" rx="8" fill="{fills.get(lv, "#eee")}" stroke="#d9e1e7"/>')
             out.append(f'<line x1="{pad}" y1="{y + band_h - 6}" x2="{width - pad}" y2="{y + band_h - 6}" stroke="#ffffff" stroke-width="6"/>')
             out.append(f'<text x="{pad + 10}" y="{y + 18}" font-weight="700" fill="#16212b">{_e(lv)}</text>')
-            members = [a for a in physical if band_of(a) == lv] if lv != "External" else []
-            x = pad + 130
-            shown = 0
-            for a in members:
-                if x + box_w > width * 0.55:
-                    out.append(f'<text x="{x}" y="{y + 42}" fill="#617181">+{len(members) - shown} more</text>')
+            members = members_of[lv]
+            capacity = cols * (2 if band_h > 96 else 1)
+            for idx, a in enumerate(members):
+                if idx == capacity - 1 and len(members) > capacity:
+                    # last slot becomes the overflow marker so the count is never hidden
+                    cx, cy = pad + label_w + (idx % cols) * (box_w + 10), y + 26 + (idx // cols) * (box_h + 6)
+                    out.append(f'<text x="{cx}" y="{cy + 24}" fill="#617181">+{len(members) - idx} more</text>')
                     break
-                label = _fit(a["name"] or a["display_type"] or a["mac"], 22)
-                sub = _fit(a["display_type"] if a["name"] else (a["ips"].split(",")[0] or a["mac"]), 24)
-                out.append(f'<rect x="{x}" y="{y + 26}" width="{box_w}" height="{box_h}" rx="5" fill="#ffffff" stroke="#bac7d0"/>')
-                out.append(f'<text x="{x + 8}" y="{y + 42}" font-weight="700" fill="#16212b">{_e(label)}</text>')
-                out.append(f'<text x="{x + 8}" y="{y + 58}" fill="#617181" font-size="10">{_e(sub)}</text>')
-                x += box_w + 10; shown += 1
+                cx, cy = pad + label_w + (idx % cols) * (box_w + 10), y + 26 + (idx // cols) * (box_h + 6)
+                label = _fit(a["name"] or a["display_type"] or a["mac"], 20)
+                sub = _fit(a["display_type"] if a["name"] else (a["ips"].split(",")[0] or a["mac"]), 26)
+                # hover text travels with the SVG (works in the exported file too); the app also opens the asset on click
+                detail = [a["name"] or a["display_type"] or a["mac"], a["display_type"] or "",
+                          " ".join(v for v in (a.get("manufacturer"), a.get("model")) if v),
+                          f"IP {a['ips']}" if a.get("ips") else "", f"MAC {a['mac']}" if a.get("mac") else "",
+                          f"Firmware {a['firmware']}" if a.get("firmware") else "",
+                          f"Criticality {a['criticality']}" if a.get("criticality") else "",
+                          f"Location {a['location']}" if a.get("location") else "", f"Zone {a['zone']}" if a.get("zone") else "",
+                          f"Function {a['process_function']}" if a.get("process_function") else "",
+                          f"Protocols {a['observed_protocols']}" if a.get("observed_protocols") else "",
+                          f"Support {a['support_status']}" if a.get("support_status") else ""]
+                out.append(f'<g class="node" data-asset="{a["id"]}"><title>{_e(chr(10).join(d for d in detail if d))}</title>')
+                out.append(f'<rect x="{cx}" y="{cy}" width="{box_w}" height="{box_h}" rx="5" fill="#ffffff" stroke="#bac7d0"/>')
+                out.append(f'<text x="{cx + 8}" y="{cy + 16}" font-weight="700" fill="#16212b">{_e(label)}</text>')
+                out.append(f'<text x="{cx + 8}" y="{cy + 32}" fill="#617181" font-size="10">{_e(sub)}</text></g>')
             if lv == "External":
-                out.append(f'<text x="{pad + 130}" y="{y + 50}" fill="#617181">{len({r["endpoint_a"] if r["level_a"] == "External" else r["endpoint_b"] for r in externals})} external endpoint(s) observed</text>')
+                out.append(f'<text x="{pad + label_w}" y="{y + 50}" fill="#617181">{len({r["endpoint_a"] if r["level_a"] == "External" else r["endpoint_b"] for r in externals})} external endpoint(s) observed</text>')
+            y += band_h
         # Conduit lines. Each level pair gets its own vertical slot in the right-hand part of the diagram
         # (no two lines share an x), its two end dots sit INSIDE the bands they join (not on the boundary
         # between bands), the stretch through any band in between is drawn thin and faded so it reads as
         # "passing through", and a numbered badge at the midpoint ties the line to the table row and legend.
-        x0, x1 = int(width * 0.55) + 50, width - pad - 30
-        n_pairs = len(ordered_pairs)
+        x0, x1 = card_area_right + 40, width - pad - 30
         step = min(110, (x1 - x0) / max(1, n_pairs - 1)) if n_pairs > 1 else 0
         stub = 16  # how far inside a band the end dot sits
         for i, (key, item) in enumerate(ordered_pairs):
             hi, lo = sorted(key, key=lambda v: bands.index(v))  # hi = drawn higher on the page
-            y_top, y_bot = y_of[hi] + band_h - 6 - stub, y_of[lo] + stub
-            edge_top, edge_bot = y_of[hi] + band_h - 6, y_of[lo]
+            y_top, y_bot = y_of[hi] + band_hs[hi] - 6 - stub, y_of[lo] + stub
+            edge_top, edge_bot = y_of[hi] + band_hs[hi] - 6, y_of[lo]
             color = colors["Unexpected"] if "Unexpected" in item["decisions"] else colors["Unknown"] if "Unknown" in item["decisions"] else colors["Tolerated"] if "Tolerated" in item["decisions"] else colors["Approved"]
             dash = ' stroke-dasharray="6,4"' if "Unknown" in item["decisions"] else ""
             x = round(x1 - i * step, 1)
@@ -1085,7 +1108,7 @@ class Store:
             out.append(f'<text x="{x}" y="{my + 4}" text-anchor="middle" font-size="11" font-weight="700" fill="{color}">{num}</text>')
             out.append('</g>')
         # legend: colour key, then one numbered row per conduit so the exported SVG stands on its own
-        ly = pad + 30 + len(bands) * band_h + 6
+        ly = pad + 30 + bands_h + 6
         for i, (name, color) in enumerate(colors.items()):
             out.append(f'<rect x="{pad + i * 120}" y="{ly - 10}" width="12" height="12" fill="{color}"/><text x="{pad + i * 120 + 16}" y="{ly}" fill="#16212b">{name}</text>')
         out.append(f'<text x="{pad + 500}" y="{ly}" fill="#617181">Dashed = not yet reviewed. Bold ends mark the two bands a conduit joins; the faint stretch only passes through.</text>')
