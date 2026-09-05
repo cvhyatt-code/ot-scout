@@ -2,6 +2,16 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.11.1 — 2026-09-05
+- PCAP import is refused while a live capture is running (the Import button is disabled with the reason). The drop storm in v0.11.0's notes turned out to have happened during an import: parsing a file in the request thread competes with the live reader for the CPU and the SQLite lock, and the old 200 KB socket buffer had no chance. Same guard the app already applies to reset, data-set switch and vendor update. 84 tests.
+
+## v0.11.0 — 2026-09-05
+- Capture pipeline rebuilt after a live session on the XPS reported 119,261 kernel drops against 55,692 frames read (68% of the mirror never reached the collector). Root cause was structural, not the disk: one thread did `recv`, the PCAP write, protocol parsing and the SQLite batch flush, against the kernel's default ~200 KB receive buffer, so the buffer overflowed whenever parsing stalled. Now: a reader thread does nothing but `recv` → PCAP → hand-off; a parser thread does parsing and SQLite; the socket asks for a 64 MB receive buffer with `SO_RCVBUFFORCE` (root, so `net.core.rmem_max` no longer caps it) and the status line shows what the kernel actually granted. The rate-limit throttle now paces the parser only — it can no longer cause drops.
+- Two distinct warnings on the Collect tab. **Dropped by the kernel** (with the percentage of the mirror lost) is unrecoverable and means the session is a sample, not a census — narrow the SPAN or capture with dumpcap and import. **Saved to the PCAP but not parsed live** is new and recoverable: the parser fell more than 300,000 frames behind, the frames are on disk, import the PCAP to add them. The old "faster disk" advice is gone; it was wrong.
+- Stop no longer discards the parse backlog: the status reads "Finishing — N frames left to parse" while the parser drains, then the session closes with the final counts.
+- Assessment guide updated with the order of remedies (narrow the mirror, `dumpcap -B 512` + import, then hardware) and what each warning means for the report.
+- 3 new tests (83 total): the parser thread drains a queue into the store and closes the session, status carries the pipeline fields, and the receive-buffer request lands.
+
 ## v0.10.2 — 2026-09-05
 - Model connection moved out of the Scout Assist tab into a **Settings** dialog (header, next to Assessment guide / About). The tab is now just the question and the answer, full width; the model pill in its corner opens Settings, and a red notice with a Settings link appears when no model is connected.
 - Install note: update with `unzip -o` over the existing folder — never delete `~/ot-scout-v04`, because `data/` holds the databases, PCAPs and the saved model connection.

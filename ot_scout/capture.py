@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import queue
 import socket
 import struct
 import threading
@@ -15,9 +16,12 @@ PACKET_ADD_MEMBERSHIP = 1
 PACKET_DROP_MEMBERSHIP = 2
 PACKET_STATISTICS = 6
 PACKET_MR_PROMISC = 1
+SO_RCVBUFFORCE = 33       # root may exceed net.core.rmem_max with this; plain SO_RCVBUF is silently capped
 
 BATCH_SIZE = 200          # frames per database transaction
 BATCH_INTERVAL = 0.25     # seconds — flush at least this often so the UI stays live on a quiet network
+RCVBUF_BYTES = 64 * 1024 * 1024   # socket receive buffer to ask for; the kernel default (~200 KB) fills in milliseconds on a busy SPAN
+QUEUE_FRAMES = 300_000    # frames the reader may hand the parser before it must wait for it; ~30-60 s of a busy mirror in memory
 PCAP_MAGIC_LE = b"\xd4\xc3\xb2\xa1"
 
 
@@ -146,10 +150,19 @@ class CaptureManager:
         self.frames = 0           # frames this capture has read from the socket
         self.dropped = 0          # frames the kernel dropped because we read too slowly (PACKET_STATISTICS)
         self.kernel_seen = 0      # frames the kernel counted for the socket (read + dropped)
+        self.parsed = 0           # frames the parser thread has processed
+        self.unparsed = 0         # frames written to the PCAP but skipped by the live parser (queue full)
+        self.rcvbuf = 0           # receive buffer the kernel actually granted, bytes
+        self.queue = None
 
     @property
     def running(self):
         return bool(self.thread and self.thread.is_alive())
+
+    @property
+    def finishing(self) -> bool:
+        """Reader has stopped but the parser is still draining what it was handed."""
+        return bool(self.thread and self.thread.is_alive() and self.stop_event.is_set())
 
     def start(self, assessment: str, site: str, point: str, interface: str, access_method: str, rate_limit: int | None = None,
               save_pcap: bool = True):
@@ -164,7 +177,7 @@ class CaptureManager:
         self.rate_limit = rate_limit or None
         self.save_pcap = bool(save_pcap)
         self.pcap_path = ""
-        self.frames = self.dropped = self.kernel_seen = 0
+        self.frames = self.dropped = self.kernel_seen = self.parsed = self.unparsed = 0
         self.stop_event.clear()
         self.session_id = self.store.begin_session(assessment, site, point, interface, "live", access_method)
         if self.save_pcap:
@@ -179,11 +192,17 @@ class CaptureManager:
         return self.session_id
 
     def _run(self):
+        """Reader thread. Does as little as possible per frame — recv, PCAP write, hand to the parser — because
+        every microsecond spent here is receive-buffer time, and the buffer filling is what the kernel counts as
+        a drop. Parsing and SQLite happen in _parse_loop on another thread; the throttle paces that thread, never
+        this one."""
         membership = None
         writer = None
+        parser = None
         try:
             sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
             self.sock = sock
+            self.rcvbuf = self._grow_rcvbuf(sock)
             sock.bind((self.interface, 0))
             ifindex = socket.if_nametoindex(self.interface)
             membership = struct.pack("IHH8s", ifindex, PACKET_MR_PROMISC, 0, b"")
@@ -192,39 +211,30 @@ class CaptureManager:
             except OSError:
                 membership = None
             sock.settimeout(0.2)
-            limiter = RateLimiter(self.rate_limit)
             writer = PcapWriter(Path(self.pcap_path)) if self.pcap_path else None
-            batch = []
-            last_flush = last_stats = time.time()
-
-            def flush():
-                nonlocal batch, last_flush
-                if batch:
-                    self.store.record_many(self.session_id, batch, self.local_mac)
-                    batch = []
-                last_flush = time.time()
-
+            self.queue = queue.Queue(QUEUE_FRAMES)
+            parser = threading.Thread(target=self._parse_loop, daemon=True, name="passive-parse")
+            parser.start()
+            last_stats = time.time()
+            recv, put, qfull = sock.recv, self.queue.put, self.queue.full
             while not self.stop_event.is_set():
                 try:
-                    frame = sock.recv(65535)
+                    frame = recv(65535)
                 except socket.timeout:
-                    if batch and time.time() - last_flush >= BATCH_INTERVAL:
-                        flush()
                     self._read_stats(sock)
                     continue
                 now = time.time()
                 self.frames += 1
                 if writer:
                     writer.write(frame, now)
-                obs = parse_ethernet(frame, now)
-                if obs:
-                    batch.append(obs)
-                if len(batch) >= BATCH_SIZE or now - last_flush >= BATCH_INTERVAL:
-                    flush()
+                if qfull():
+                    # the parser is behind by QUEUE_FRAMES; the frame is on disk in the PCAP but will not be
+                    # parsed live — counted separately from kernel drops because it is recoverable by re-import
+                    self.unparsed += 1
+                else:
+                    put((frame, now))
                 if now - last_stats >= 1.0:
                     self._read_stats(sock); last_stats = now
-                limiter.tick()
-            flush()
             self._read_stats(sock)
         except PermissionError:
             self.error = "Packet capture permission denied. Start with sudo."
@@ -242,8 +252,58 @@ class CaptureManager:
             self.stopped_at = time.time()
             if writer:
                 writer.close()
+            if parser is not None:
+                self.queue.put(None)          # sentinel: parse what is queued, then finish the session
+                parser.join()
+            elif self.session_id:
+                self.store.end_session(self.session_id, dropped=self.dropped, frames=self.frames)
+
+    def _parse_loop(self):
+        """Parser thread: drain the queue into batched SQLite writes. Keeps going after the reader stops until
+        everything the reader handed over is in the database, then closes the session."""
+        limiter = RateLimiter(self.rate_limit)
+        batch = []
+        last_flush = time.time()
+        try:
+            while True:
+                try:
+                    item = self.queue.get(timeout=BATCH_INTERVAL)
+                except queue.Empty:
+                    item = False
+                if item is None:
+                    break
+                if item is not False:
+                    frame, ts = item
+                    obs = parse_ethernet(frame, ts)
+                    if obs:
+                        batch.append(obs)
+                    self.parsed += 1
+                    limiter.tick()
+                now = time.time()
+                if batch and (len(batch) >= BATCH_SIZE or now - last_flush >= BATCH_INTERVAL):
+                    self.store.record_many(self.session_id, batch, self.local_mac)
+                    batch = []
+                    last_flush = now
+            if batch:
+                self.store.record_many(self.session_id, batch, self.local_mac)
+        finally:
             if self.session_id:
                 self.store.end_session(self.session_id, dropped=self.dropped, frames=self.frames)
+
+    @staticmethod
+    def _grow_rcvbuf(sock) -> int:
+        """Ask for a large receive buffer. SO_RCVBUFFORCE (root) ignores net.core.rmem_max; fall back to
+        SO_RCVBUF, which the kernel caps at rmem_max (~200 KB by default). Returns what we actually got."""
+        for opt in (SO_RCVBUFFORCE, socket.SO_RCVBUF):
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, opt, RCVBUF_BYTES)
+                break
+            except OSError:
+                continue
+        try:
+            return sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+        except OSError:
+            return 0
 
     def _read_stats(self, sock):
         """PACKET_STATISTICS returns (packets, drops) since the last read and resets — accumulate."""
@@ -256,6 +316,8 @@ class CaptureManager:
         self.dropped += drops
 
     def stop(self):
+        """Stop reading. The session is closed by the parser thread once the queue is drained; status()
+        reports finishing=True and the remaining queued count until then."""
         self.stop_event.set()
         if self.thread:
             self.thread.join(timeout=3)
@@ -271,7 +333,9 @@ class CaptureManager:
         return {"running": self.running, "interface": self.interface, "session_id": self.session_id,
                 "error": self.error, "started_at": self.started_at, "stopped_at": self.stopped_at,
                 "elapsed_seconds": self.elapsed_seconds(), "rate_limit": self.rate_limit,
-                "frames": self.frames, "dropped": self.dropped, "pcap_path": self.pcap_path, "save_pcap": self.save_pcap}
+                "frames": self.frames, "dropped": self.dropped, "pcap_path": self.pcap_path, "save_pcap": self.save_pcap,
+                "parsed": self.parsed, "unparsed": self.unparsed, "queued": self.queue.qsize() if self.queue else 0,
+                "finishing": self.finishing, "rcvbuf": self.rcvbuf}
 
     def import_pcap(self, data: bytes, assessment: str, site: str, point: str, filename: str, rate_limit: int | None = None) -> dict:
         session_id = self.store.begin_session(assessment, site, point, filename, "pcap", "Imported PCAP")

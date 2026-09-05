@@ -341,6 +341,8 @@ class Handler(BaseHTTPRequestHandler):
                 item = self.server.store.update_asset(asset_id, self._json_body())
                 return self._json({"ok": True, "asset": item})
             if path == "/api/import-pcap":
+                if self.server.capture.running:
+                    raise ValueError("Stop the live capture before importing a PCAP. Parsing the file competes with the live reader for the CPU and the database, and that is what causes kernel drops.")
                 data = self._body(MAX_UPLOAD)
                 meta = {k: self.headers.get(h, "").strip() for k, h in {
                     "assessment":"X-Assessment", "site":"X-Site", "point":"X-Collection-Point", "filename":"X-Filename"}.items()}
