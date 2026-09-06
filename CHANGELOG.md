@@ -2,6 +2,9 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.14.0 — 2026-09-05
+- Conduit drawer: every relationship in the selected zone pair carries its Approved / Tolerated / Unexpected / Unknown decision and business-purpose note, saved on change; the zone-pair table, diagram and drawer refresh together. Unreviewed relationships sort first with a count in the heading; a colored edge shows each decision; long lists are capped at 25 with "Show all". Conduit review no longer requires the Communications tab.
+
 ## v0.13.0 — 2026-09-05
 - Purdue tab: selecting a conduit (table row or diagram line) opens a drawer with the findings that cite it (rejected/superseded drafts folded away), the relationships in that zone pair with their decisions, and a "Draft finding from this conduit" button that opens the finding dialog pre-filled and pre-linked. An Unexpected conduit with no live finding is flagged in the drawer.
 - `GET /api/findings/for?kind=pair|relationship|asset&key=…` — findings citing an evidence item.
