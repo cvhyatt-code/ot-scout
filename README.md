@@ -125,6 +125,15 @@ CHANGELOG.md           every version, shown from the app's About link
 
 Prototype, actively developed. Version is in `ot_scout/__init__.py` and shown in the header, browser tab, startup line and About dialog. See `CHANGELOG.md`.
 
+## Issues, contributions and security
+
+Bug reports and suggestions are welcome — open an issue. **Pull requests are not accepted**, so that
+the copyright stays in one place and future licensing decisions stay open; fork it instead, which the
+licence explicitly allows. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+To report a vulnerability, use **Report a vulnerability** on the Security tab rather than a public
+issue. Scope and what to expect are in [`SECURITY.md`](SECURITY.md).
+
 ## License
 
 Copyright (C) 2026 Higate Ventures LLC.
