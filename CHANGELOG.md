@@ -2,6 +2,9 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.15.1 — 2026-09-13
+- The About dialog now carries the licence notice: copyright, that the tool comes with absolutely no warranty, that it is free software under the GNU Affero General Public License v3 or later and may be redistributed under those terms, and a link to the source. AGPL section 0 asks an interactive interface to display those, and section 13 wants anyone who reaches a modified version over a network to be able to get the source; the About dialog is the place for both.
+
 ## v0.15.0 — 2026-09-13
 - The web interface refuses to bind a non-loopback address. It has no authentication — every endpoint is open to whoever can reach the port, including evidence export, database reset and the Scout Assist model settings that hold an API key — so `--host 0.0.0.0` now exits with a message naming exactly what would be exposed and pointing at `ssh -L` or `tailscale serve` instead. `--insecure-bind` still permits it for anyone who means it, with a startup banner. Previously a one-word flag put an unauthenticated control plane for a live assessment onto the network being assessed, and nothing said so.
 - Live capture now fails cleanly off Linux. `start()` checks for `AF_PACKET` before spawning the capture thread and returns "Live capture requires Linux — import a PCAP instead", rather than an `AttributeError` raised inside a thread where nobody sees it. Everything downstream of capture — import, inventory, zones, conduits, findings, the report — already ran on any platform; now the tool says so instead of appearing broken.
