@@ -65,7 +65,7 @@ python3 -m unittest discover -s tests   # 84 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
 ```
 
-`run.py --host 0.0.0.0` binds to all interfaces (e.g. to reach it from a tablet over Tailscale); `--port` and `--database` do what they say. Data lives in `data/ot_scout_v4.db` (SQLite) and is git-ignored.
+`--port` and `--database` do what they say. `--host` is different: the web interface has **no authentication**, so it binds to localhost and refuses any other address unless you also pass `--insecure-bind`. To reach a collector remotely, put a tunnel in front of it (`ssh -L 8080:localhost:8080 user@collector`, or `tailscale serve`) rather than opening the bind. See [`INSTALL.md`](INSTALL.md) for hardware, capture, remote access and getting the evidence off. Data lives in `data/ot_scout_v4.db` (SQLite) and is git-ignored.
 
 To see the tool populated without a plant, click **Load demo data** in the header — it builds a fictitious water utility (Riverbend Regional Water Utility) with mixed SPAN/access-port captures, decoded fingerprints, a walkdown inventory, Purdue placement, conduit decisions and findings. Your own database is untouched; **Back to my data** switches back.
 

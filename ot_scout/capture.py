@@ -23,6 +23,7 @@ BATCH_INTERVAL = 0.25     # seconds — flush at least this often so the UI stay
 RCVBUF_BYTES = 64 * 1024 * 1024   # socket receive buffer to ask for; the kernel default (~200 KB) fills in milliseconds on a busy SPAN
 QUEUE_FRAMES = 300_000    # frames the reader may hand the parser before it must wait for it; ~30-60 s of a busy mirror in memory
 PCAP_MAGIC_LE = b"\xd4\xc3\xb2\xa1"
+PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"   # Wireshark and dumpcap write this by default; OT Scout reads classic pcap
 
 
 class PcapWriter:
@@ -78,6 +79,11 @@ class RateLimiter:
             self._count = 0
 
 
+def capture_supported() -> bool:
+    """Live capture needs Linux AF_PACKET. Everything downstream of capture is portable."""
+    return hasattr(socket, "AF_PACKET")
+
+
 def interfaces() -> list[dict]:
     result = []
     try:
@@ -112,6 +118,10 @@ def iter_pcap(data: bytes):
         b"\xd4\xc3\xb2\xa1": ("<", 1_000_000), b"\xa1\xb2\xc3\xd4": (">", 1_000_000),
         b"\x4d\x3c\xb2\xa1": ("<", 1_000_000_000), b"\xa1\xb2\x3c\x4d": (">", 1_000_000_000),
     }
+    if magic == PCAPNG_MAGIC:
+        raise ValueError("This is a pcapng file — Wireshark and dumpcap write pcapng by default, and OT Scout "
+                         "reads classic libpcap. Convert it with:  editcap -F libpcap in.pcapng out.pcap  "
+                         "(or capture in pcap format to begin with:  dumpcap -P -w out.pcap)")
     if magic not in formats:
         raise ValueError("Only classic Ethernet PCAP files are supported in this prototype")
     endian, divisor = formats[magic]
@@ -166,6 +176,10 @@ class CaptureManager:
 
     def start(self, assessment: str, site: str, point: str, interface: str, access_method: str, rate_limit: int | None = None,
               save_pcap: bool = True):
+        if not capture_supported():
+            raise RuntimeError("Live capture requires Linux — it uses AF_PACKET, which this platform does not "
+                               "provide. Import a PCAP instead: everything after capture (inventory, zones, "
+                               "conduits, findings, the report) runs on any platform.")
         if self.running:
             raise RuntimeError("A capture is already running")
         available = {item["name"] for item in interfaces()}
