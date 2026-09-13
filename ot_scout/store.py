@@ -1582,7 +1582,3 @@ class Store:
                 db.execute("UPDATE assets SET vendor=? WHERE id=?", (self.vendors.lookup(row["mac"]), row["id"]))
         return count
 
-    def reset(self):
-        self._bump()
-        with self.lock, self.connect() as db:
-            db.executescript("DELETE FROM connections;DELETE FROM dns_names;DELETE FROM fingerprints;DELETE FROM asset_names;DELETE FROM asset_ips;DELETE FROM sightings;DELETE FROM assets;DELETE FROM sessions;DELETE FROM network_legs;DELETE FROM site_checklist;DELETE FROM sites;DELETE FROM finding_links;DELETE FROM findings;DELETE FROM conduits;DELETE FROM asset_aliases;")

@@ -234,12 +234,12 @@ class GuardWiringTests(unittest.TestCase):
         self.assertIn(b"Host", body)
 
     def test_a_cross_origin_post_is_refused(self):
-        status, body = self.request("POST", "/api/reset", origin="http://evil.example")
+        status, body = self.request("POST", "/api/stop", origin="http://evil.example")
         self.assertEqual(status, 403)
         self.assertIn(b"Cross-origin", body)
 
     def test_a_same_origin_post_still_works(self):
-        status, _ = self.request("POST", "/api/reset", origin=f"http://127.0.0.1:{self.port}")
+        status, _ = self.request("POST", "/api/stop", origin=f"http://127.0.0.1:{self.port}")
         self.assertEqual(status, 200)
 
 

@@ -60,7 +60,7 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 - Read the **Executive readout** on the Report tab first: the assets ranked by exposure are what the plant manager will ask about, and every score is itemised so you can defend it. If the ranking looks wrong, it is usually a missing criticality or an unreviewed conduit — fix the input, not the number.
 - Fill in Prepared for / Prepared by and generate the Word report. Read the coverage section first — if it says access-port visibility, so will the client, and the rest of the report has to be written with that caveat.
 - Click **Export evidence package**. The zip holds the JSON, the report, every export, every raw PCAP and a SHA-256 manifest — keep it with the engagement record; it is what you produce when a result is challenged. Verify any copy later with `sha256sum -c SHA256SUMS`.
-- Clear the engagement's data only after the exports are safely stored.
+- When the engagement is finished and the evidence package is safely stored, delete the engagement: **Engagement** in the header, open it, and use the Danger zone. That removes its database and every raw capture it wrote. Nothing else on the laptop is touched, and there is no undo.
 
 ## Scout Assist
 

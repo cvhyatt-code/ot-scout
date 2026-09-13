@@ -235,3 +235,126 @@ class EngagementApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EngagementDetailTests(unittest.TestCase):
+    """You should be able to see exactly what an engagement owns before deciding to remove it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        (self.dir / "captures").mkdir()
+        self.server = server_for(self.dir)
+
+    def tearDown(self):
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def seed(self, name, captures=2):
+        """An engagement with sessions and real capture files on disk."""
+        status = self.server.new_engagement(name)
+        store = self.server.store
+        for i in range(captures):
+            sid = store.begin_session(name, "Plant", f"SPAN {i}", "eth0", "live", "SPAN")
+            pcap = self.dir / "captures" / f"{Path(status['file']).stem}-session-{sid:03d}.pcap"
+            pcap.write_bytes(b"\xd4\xc3\xb2\xa1" + b"\x00" * 4096)
+            store.set_session_pcap(sid, str(pcap))
+        return status["file"]
+
+    def test_detail_lists_the_database_and_every_capture(self):
+        f = self.seed("Acme Water", captures=2)
+        d = self.server.engagement_detail(f)
+        self.assertEqual(d["name"], "Acme Water")
+        self.assertEqual(len(d["sessions"]), 2)
+        self.assertTrue(all(s["capture"] and not s["capture"]["missing"] for s in d["sessions"]))
+        self.assertEqual(d["capture_bytes"], 2 * 4100)
+        self.assertGreater(d["database_bytes"], 0)
+        self.assertEqual(d["total_bytes"], d["database_bytes"] + d["capture_bytes"])
+
+    def test_a_capture_deleted_behind_our_back_is_reported_missing(self):
+        f = self.seed("Acme Water", captures=1)
+        Path(self.server.engagement_detail(f)["sessions"][0]["capture"]["name"])
+        next(( self.dir / "captures").glob("*.pcap")).unlink()
+        d = self.server.engagement_detail(f)
+        self.assertTrue(d["sessions"][0]["capture"]["missing"])
+        self.assertEqual(d["capture_bytes"], 0)
+
+    def test_an_imported_session_has_no_capture_file(self):
+        self.server.new_engagement("Imported job")
+        self.server.store.begin_session("Imported job", "Plant", "handed to me", "vendor.pcap", "pcap", "Imported PCAP")
+        d = self.server.engagement_detail(Path(self.server.store.path).name)
+        self.assertIsNone(d["sessions"][0]["capture"])
+
+    def test_detail_refuses_a_path_outside_the_data_directory(self):
+        for target in ("../elsewhere.db", "/etc/passwd", "nope.db"):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                self.server.engagement_detail(target)
+
+    def test_detail_refuses_the_demo_set(self):
+        Store(self.server.demo_database)
+        with self.assertRaises(ValueError):
+            self.server.engagement_detail("demo.db")
+
+
+class EngagementDeleteTests(EngagementDetailTests):
+    def test_delete_removes_the_database_and_its_captures(self):
+        keep = self.seed("Keep This", captures=2)
+        doomed = self.seed("Delete This", captures=3)
+        self.server.switch_database(keep)                       # never delete what you are standing in
+        result = self.server.delete_engagement(doomed, "Delete This")
+        self.assertEqual(result["captures_removed"], 3)
+        self.assertFalse((self.dir / doomed).exists())
+        self.assertEqual(len(list((self.dir / "captures").glob("*.pcap"))), 2, "the other engagement's captures must survive")
+        self.assertNotIn(doomed, [e["file"] for e in self.server.engagements()])
+
+    def test_the_engagement_you_are_in_cannot_be_deleted(self):
+        f = self.seed("Current Job", captures=1)
+        with self.assertRaises(ValueError) as ctx:
+            self.server.delete_engagement(f, "Current Job")
+        self.assertIn("Switch to a different engagement", str(ctx.exception))
+        self.assertTrue((self.dir / f).exists())
+
+    def test_the_name_must_match_exactly(self):
+        keep = self.seed("Keep This", captures=1)
+        doomed = self.seed("Delete This", captures=1)
+        self.server.switch_database(keep)
+        for wrong in ("delete this", "Delete", "", "Keep This", doomed):
+            with self.subTest(confirm=wrong), self.assertRaises(ValueError):
+                self.server.delete_engagement(doomed, wrong)
+        self.assertTrue((self.dir / doomed).exists())
+        self.assertEqual(len(list((self.dir / "captures").glob("*.pcap"))), 2)
+
+    def test_a_running_capture_blocks_deletion(self):
+        keep = self.seed("Keep This", captures=1)
+        doomed = self.seed("Delete This", captures=1)
+        self.server.switch_database(keep)
+        self.server.capture.thread = AliveThread()
+        with self.assertRaises(ValueError) as ctx:
+            self.server.delete_engagement(doomed, "Delete This")
+        self.assertIn("Stop the capture", str(ctx.exception))
+        self.assertTrue((self.dir / doomed).exists())
+
+    def test_a_capture_path_outside_the_captures_directory_is_never_unlinked(self):
+        """The path comes out of a database; treat it as untrusted anyway."""
+        keep = self.seed("Keep This", captures=1)
+        doomed = self.seed("Delete This", captures=0)
+        outside = self.dir.parent / "not-ours.pcap"
+        outside.write_bytes(b"important")
+        sid = self.server.store.begin_session("Delete This", "Plant", "SPAN", "eth0", "live", "SPAN")
+        self.server.store.set_session_pcap(sid, str(outside))
+        self.server.switch_database(keep)
+        result = self.server.delete_engagement(doomed, "Delete This")
+        self.assertTrue(outside.is_file(), "a path outside data/captures must be left alone")
+        self.assertEqual(result["captures_removed"], 0)
+        self.assertEqual(result["captures_kept"], 1)
+
+    def test_traversal_targets_are_refused(self):
+        for target in ("../elsewhere.db", "/etc/passwd", "missing.db"):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                self.server.delete_engagement(target, "anything")
+
+    def test_export_timestamp_is_reported_when_present(self):
+        f = self.seed("Exported Job", captures=0)
+        self.assertEqual(self.server.engagement_detail(f)["exported_at"], "")
+        self.server.store.meta_set("evidence_exported_at", "2026-09-13T21:00:00+0000")
+        self.assertTrue(self.server.engagement_detail(f)["exported_at"].startswith("2026-09-13"))

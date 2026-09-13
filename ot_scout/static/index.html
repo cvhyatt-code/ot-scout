@@ -129,7 +129,7 @@ header h1 .ver{font-weight:400;font-size:10.5px;color:#7d9dab;border:1px solid #
 </div><div class="muted" style="margin-top:8px">Generates a .docx from the evidence currently in the database: cover, document control, executive readout, coverage, inventory, communications, auto-drafted observations, roadmap and appendices. Every observation is a draft that requires assessor validation.</div></section>
 <section class="panel"><div class="toolbar"><h2>Evidence package</h2><button class="primary" id="evidence" style="width:auto">Export evidence package (zip)</button></div><div class="sub">One zip with the assessment JSON, the Word report (using the fields above), every CSV and the diagram, the raw PCAP of every live session, and a <code>MANIFEST.txt</code> listing every file with its SHA-256 — verify later with <code>sha256sum -c SHA256SUMS</code>. This is what to keep with the engagement record.</div></section>
 <section class="panel"><div class="toolbar"><h2>Evidence exports</h2><div class="row"><a href="/api/export/assessment.json"><button>Assessment JSON</button></a><a href="/api/export/assets.csv"><button>Assets CSV</button></a><a href="/api/export/relationships.csv"><button>Relationships CSV</button></a><a href="/api/export/discovery.csv"><button>Discovery CSV</button></a><a href="/api/export/connections.csv"><button>Flows CSV</button></a><a href="/api/export/purdue.svg"><button>Purdue diagram SVG</button></a></div></div><div class="sub">The JSON export carries everything the report uses (sessions, assets, relationships, sites, findings, zones) and can be re-rendered offline with <code>python3 -m ot_scout.report assessment.json report.docx</code>.</div></section>
-<section class="panel"><div class="toolbar"><h2>Reset</h2><button id="reset" class="danger" style="width:auto">Clear this engagement's data</button></div><div class="sub">Deletes every session, asset, relationship, site, finding and conduit decision in the current data set. The IEEE vendor table is kept.</div></section>
+
 </div>
 <div class="tab" data-pane="copilot" hidden>
 <section class="panel"><div class="toolbar"><h2>Ask Scout Assist</h2><a href="#" id="cpOpenSettings" title="Change the model connection in Settings" style="text-decoration:none"><span id="cpModelPill" class="pill na">not configured</span></a></div>
@@ -201,7 +201,8 @@ header h1 .ver{font-weight:400;font-size:10.5px;color:#7d9dab;border:1px solid #
 <div class="sub" id="cpLocalNote" style="margin-top:10px;font-weight:600"></div>
 <div class="sub" style="margin-top:8px"><strong>Where the evidence goes.</strong> A cloud backend (Anthropic, OpenAI) receives the evidence selected for each question — asset names, IPs, MACs, relationships, findings. For customer data that may not leave site, point this at a local model (Ollama or a llama.cpp server on this machine or on the analysis box). Settings are stored in <code>data/copilot-settings.json</code> on this machine only; the key is never included in exports or the evidence package. Every exchange is appended to <code>data/copilot-log.jsonl</code>.</div>
 </div></dialog>
-<dialog id="engagementDialog"><div class="dialog-body"><div class="toolbar"><h2>Engagement</h2><button class="edit" id="engagementClose" style="width:auto">Close</button></div>
+<dialog id="engagementDialog"><div class="dialog-body"><div class="toolbar"><h2>Engagements</h2><button class="edit" id="engagementClose" style="width:auto">Close</button></div>
+<div id="engView">
 <div class="sub" id="engagementCurrent" style="margin-bottom:16px"></div>
 <section class="panel" style="margin-bottom:16px"><h3 style="margin-top:0">Start a new engagement</h3>
 <div class="sub">Creates a separate database for this customer and switches to it. Nothing in the current engagement is changed or deleted, and you can return to it below. Captures, inventory, zones, findings, the report and the evidence package all stay inside the engagement they belong to — which is what keeps one customer's assets out of another customer's report.</div>
@@ -210,7 +211,17 @@ header h1 .ver{font-weight:400;font-size:10.5px;color:#7d9dab;border:1px solid #
 <h3>Return to an engagement</h3><div class="sub" style="margin-bottom:10px">Switching is refused while a capture is running — stop it first.</div>
 <div id="engagementList"></div>
 <h3 style="margin-top:20px">Demonstration data</h3>
-<div class="row" style="justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)"><div><strong>Riverbend Regional Water Utility</strong> <span class="pill warn">fictitious</span><div class="sub">A complete worked assessment — captures, inventory, Purdue placement, conduit decisions and findings — for walking every tab without a plant. Entirely invented; the external endpoints are in the RFC 5737 documentation range. It lives in its own database, so your engagements are untouched while you look at it.</div></div><button class="edit" id="demoToggle" style="width:auto;flex:none">Load the demonstration data</button></div></div></dialog>
+<div class="row" style="justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)"><div><strong>Riverbend Regional Water Utility</strong> <span class="pill warn">fictitious</span><div class="sub">A complete worked assessment — captures, inventory, Purdue placement, conduit decisions and findings — for walking every tab without a plant. Entirely invented; the external endpoints are in the RFC 5737 documentation range. It lives in its own database, so your engagements are untouched while you look at it.</div></div><button class="edit" id="demoToggle" style="width:auto;flex:none">Load the demonstration data</button></div>
+</div>
+<div id="engDetail" hidden>
+<button class="edit" id="engBack" style="width:auto;margin-bottom:14px">&larr; All engagements</button>
+<h3 id="engDetailName" style="margin:0 0 4px"></h3><div class="sub" id="engDetailMeta" style="margin-bottom:14px"></div>
+<div id="engDetailFiles"></div>
+<section class="panel" style="margin-top:20px;border-color:#e6b8b2;background:#fdf5f4">
+<h3 style="margin-top:0" class="danger">Danger zone</h3>
+<div class="sub" id="engDangerNote"></div>
+<div class="row" style="gap:8px;margin-top:12px"><input id="engConfirm" style="flex:1"><button class="danger" id="engDelete" style="width:auto;flex:none" disabled>Delete this engagement</button></div>
+</section></div></div></dialog>
 <dialog id="aboutDialog"><div class="dialog-body"><div class="toolbar"><h2>About OT Scout</h2><button class="edit" id="aboutClose">Close</button></div><div class="sub" style="margin-bottom:12px">Running version <strong id="aboutVersion">{{VERSION}}</strong> · passive OT/ICS assessment. Capture is read-only; nothing is ever sent on the interface being captured.</div><div class="sub" id="aboutLicence" style="margin-bottom:12px;padding-top:10px;border-top:1px solid var(--line)">Copyright &copy; 2026 Higate Ventures LLC. OT Scout comes with <strong>absolutely no warranty</strong>. It is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU Affero General Public License, version 3 or later</a>, and you are welcome to redistribute it under those terms; the full licence is in the <code>LICENSE</code> file. Source code: <a href="https://github.com/cvhyatt-code/ot-scout" target="_blank" rel="noopener">github.com/cvhyatt-code/ot-scout</a>.</div><div class="doc" id="aboutDoc"></div></div></dialog>
 <dialog id="guideDialog" style="width:min(860px,94vw)"><div class="dialog-body"><div class="toolbar"><h2>Assessment guide</h2><button class="edit" id="guideClose">Close</button></div><div class="doc" id="guideDoc"></div></div></dialog>
 <div id="toast"></div>
@@ -299,15 +310,16 @@ async function post(path,data){return api(path,{method:'POST',headers:{'Content-
 // report template text. Engagement-scoped ones name a customer and their site, and must not follow the
 // operator from one engagement to the next — a session, report or evidence package carrying the
 // previous client's name is a confidentiality problem, not an untidy one. Those are keyed by the
-// database in use (INSTALL.md recommends one database per engagement) and cleared on reset.
+// database in use (INSTALL.md recommends one database per engagement), so a new one starts empty
+// and a deleted one takes its remembered fields with it.
 const ENGAGEMENT_FIELDS=['assessment','site','point','rptFor'];
 let storeScope='';
 const skey=id=>ENGAGEMENT_FIELDS.includes(id)?`otscout:${storeScope}:${id}`:'otscout.'+id;
 const remember=(id,v)=>{try{localStorage.setItem(skey(id),v)}catch(e){}};
 const recall=id=>{try{return localStorage.getItem(skey(id))}catch(e){return null}};
-async function setStoreScope(){try{const d=await api('/api/database');storeScope=d.path||d.current||''}catch(e){storeScope=''}}
+async function setStoreScope(){try{const d=await api('/api/database');storeScope=d.file||d.current||''}catch(e){storeScope=''}}
 function restoreEngagementFields(){for(const id of ENGAGEMENT_FIELDS)$(id).value=recall(id)??''}
-function forgetEngagementFields(){for(const id of ENGAGEMENT_FIELDS){try{localStorage.removeItem(skey(id))}catch(e){}$(id).value=''}}
+function forgetEngagementFields(file){for(const id of ENGAGEMENT_FIELDS){try{localStorage.removeItem(`otscout:${file}:${id}`)}catch(e){}}}
 function persist(){for(const id of ['assessment','site','point','access','iface','throttle'])remember(id,$(id).value);remember('savePcap',$('savePcap').checked?'1':'0')}
 for(const id of ['assessment','site','point','access','iface','throttle','savePcap'])$(id).addEventListener('change',persist);try{if(recall('savePcap')==='0')$('savePcap').checked=false}catch(e){}
 for(const id of ['rptFor','rptBy','rptTitle','rptBanner','rptSanitize']){const v=recall(id);if(v!==null)$(id).value=v;$(id).addEventListener('change',()=>remember(id,$(id).value))}
@@ -404,16 +416,44 @@ function applyEngagement(dataset,name){const chip=$('engagementBtn'),demo=datase
 function fmtAgo(ts){const s=Math.max(0,Math.floor(Date.now()/1000-ts));if(s<3600)return Math.max(1,Math.floor(s/60))+' min ago';if(s<86400)return Math.floor(s/3600)+' h ago';return Math.floor(s/86400)+' d ago'}
 async function loadEngagements(){const box=$('engagementList');box.innerHTML='<div class="sub">Reading…</div>';try{const d=await api('/api/engagements'),cur=d.engagements.find(e=>e.current);
 $('engagementCurrent').innerHTML=cur?`Currently in <strong>${esc(cur.name)}</strong> — ${cur.sessions} session(s), ${cur.assets} asset(s), <code>data/${esc(cur.file)}</code>.`:'Currently showing the demonstration data set. Switch back to an engagement below.';
-box.innerHTML=d.engagements.map(e=>`<div class="row" style="justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)"><div><strong>${esc(e.name)}</strong>${e.unnamed?' <span class="pill na">no name recorded</span>':''}${e.current?' <span class="pill ok">current</span>':''}<div class="sub"><code>data/${esc(e.file)}</code> · ${e.sessions} session(s) · ${e.assets} asset(s) · last used ${fmtAgo(e.modified)}</div></div>${e.current?'':`<button class="edit sw" data-file="${esc(e.file)}" data-name="${esc(e.name)}" style="width:auto;flex:none">Switch to this</button>`}</div>`).join('')||'<div class="sub">No engagements found in the data directory.</div>';
-for(const b of box.querySelectorAll('button.sw'))b.onclick=()=>switchEngagement(b.dataset.file,b.dataset.name)}catch(e){box.innerHTML='<div class="sub">'+esc(e.message)+'</div>'}}
+box.innerHTML=d.engagements.map(e=>`<div class="row" style="justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)"><div><strong>${esc(e.name)}</strong>${e.unnamed?' <span class="pill na">no name recorded</span>':''}${e.current?' <span class="pill ok">current</span>':''}<div class="sub"><code>data/${esc(e.file)}</code> · ${e.sessions} session(s) · ${e.assets} asset(s) · last used ${fmtAgo(e.modified)}</div></div><div class="row" style="gap:6px;flex:none"><button class="edit dt" data-file="${esc(e.file)}" style="width:auto;flex:none">Details</button>${e.current?'':`<button class="edit sw" data-file="${esc(e.file)}" data-name="${esc(e.name)}" style="width:auto;flex:none">Switch to this</button>`}</div></div>`).join('')||'<div class="sub">No engagements found in the data directory.</div>';
+for(const b of box.querySelectorAll('button.sw'))b.onclick=()=>switchEngagement(b.dataset.file,b.dataset.name);
+for(const b of box.querySelectorAll('button.dt'))b.onclick=()=>openEngagementDetail(b.dataset.file)}catch(e){box.innerHTML='<div class="sub">'+esc(e.message)+'</div>'}}
 async function adoptEngagement(d,note){$('engagementDialog').close();applyDataset(d.current);applyEngagement(d.current,d.engagement);await setStoreScope();restoreEngagementFields();toast(note);refresh(true);loadEngagements()}
 async function switchEngagement(file,name){if(!confirm(`Switch to "${name}"?\n\nThe engagement you are in now is left exactly as it is — nothing is deleted and you can switch back at any time.\n\nEverything on screen is replaced by that engagement's data: sessions, inventory, zones, findings and the report.\n\nA running capture is not stopped — the switch is refused instead. Stop it first.`))return;try{await adoptEngagement(await post('/api/database/switch',{target:file}),'Now in '+name)}catch(e){toast(e.message,true)}}
-$('engagementBtn').onclick=()=>{loadEngagements();$('engagementDialog').showModal()};
+const fmtBytes=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':(n||0)+' B';
+let engDetail=null;
+function showEngList(){$('engDetail').hidden=true;$('engView').hidden=false;engDetail=null}
+// Seeing exactly what is on disk is the point of this view: you should never be asked to destroy
+// something you have only been told the size of.
+async function openEngagementDetail(file){try{const d=await api('/api/engagements/detail?file='+encodeURIComponent(file));engDetail=d;
+ const caps=d.sessions.filter(s=>s.capture&&!s.capture.missing);
+ $('engDetailName').textContent=d.name;
+ $('engDetailMeta').innerHTML=`${d.sessions.length} session(s) · ${d.assets} asset(s) · ${caps.length} raw capture(s) · <strong>${fmtBytes(d.total_bytes)}</strong> on disk`;
+ $('engDetailFiles').innerHTML=`<div style="padding:9px 0;border-top:1px solid var(--line)"><strong>Assessment database</strong><div class="sub">${fmtBytes(d.database_bytes)} · <code>data/${esc(d.file)}</code></div></div>`
+  +d.sessions.map(s=>{const c=s.capture,where=c?(c.missing?'<span class="pill bad">capture file missing</span>':'<code>data/captures/'+esc(c.name)+'</code>'):(s.source_type==='pcap'?'imported — no file stored':'no PCAP saved');
+   return `<div style="padding:9px 0;border-top:1px solid var(--line)"><strong>Session ${s.id}</strong> — ${esc(s.site||'')}${s.collection_point?' · '+esc(s.collection_point):''}<div class="sub">${esc((s.started_at||'').replace('T',' ').slice(0,16))} · ${(s.frames||0).toLocaleString()} frames${c&&!c.missing?' · '+fmtBytes(c.bytes):''}</div><div class="sub">${where}</div></div>`}).join('')
+  +(d.sessions.length?'':'<div class="sub" style="padding:9px 0;border-top:1px solid var(--line)">Nothing has been captured in this engagement yet.</div>');
+ const note=$('engDangerNote');
+ if(d.current){note.innerHTML='<strong>You are currently in this engagement.</strong> Switch to another one first — OT Scout will not delete the data set you are looking at.';$('engConfirm').disabled=true;$('engDelete').disabled=true;$('engConfirm').value=''}
+ else{$('engConfirm').disabled=false;$('engConfirm').value='';$('engConfirm').placeholder=d.name;$('engDelete').disabled=true;
+  note.innerHTML=`Permanently deletes the database and ${caps.length} raw capture(s) listed above — ${fmtBytes(d.total_bytes)}. There is no undo and nothing is moved to a recycle bin.<br><br>`
+   +(d.exported_at?`An evidence package was exported from this engagement on <strong>${esc(d.exported_at.slice(0,10))}</strong>. OT Scout cannot tell whether that export is stored anywhere safe — confirm it is before you delete this.`
+     :'<strong>No evidence package has ever been exported from this engagement.</strong> Deleting it leaves no record of the work at all.')
+   +`<br><br>Type <strong>${esc(d.name)}</strong> below to enable the button.`}
+ $('engView').hidden=true;$('engDetail').hidden=false}catch(e){toast(e.message,true)}}
+$('engBack').onclick=showEngList;
+$('engConfirm').oninput=()=>{$('engDelete').disabled=!engDetail||engDetail.current||$('engConfirm').value.trim()!==engDetail.name};
+$('engDelete').onclick=async()=>{if(!engDetail||engDetail.current)return;
+ if(!confirm(`Delete "${engDetail.name}" and every capture it owns?\n\nThis is permanent. There is no undo.`))return;
+ try{const r=await post('/api/engagements/delete',{file:engDetail.file,confirm:$('engConfirm').value.trim()});
+  forgetEngagementFields(engDetail.file);toast(`Deleted ${r.deleted} — ${r.captures_removed} capture(s), ${fmtBytes(r.freed_bytes)} freed`);showEngList();loadEngagements()}catch(e){toast(e.message,true)}};
+$('engagementBtn').onclick=()=>{showEngList();loadEngagements();$('engagementDialog').showModal()};
 $('engagementClose').onclick=()=>$('engagementDialog').close();
 $('engagementCreate').onclick=async()=>{const name=$('engagementName').value.trim();if(!name)return toast('Give the engagement a name first',true);if(!confirm(`Start a new engagement called "${name}"?\n\nA new, empty database is created and OT Scout switches to it. The engagement you are in now is kept and can be returned to at any time.\n\nA running capture is not stopped — this is refused instead. Stop it first.`))return;try{await adoptEngagement(await post('/api/engagements/new',{name}),'Started '+name);$('engagementName').value=''}catch(e){toast(e.message,true)}};
 $('start').onclick=async()=>{try{persist();await post('/api/start',{assessment:$('assessment').value,site:$('site').value,collection_point:$('point').value,interface:$('iface').value,access_method:$('access').value,rate_limit:Number($('throttle').value)||0,save_pcap:$('savePcap').checked});refresh()}catch(e){toast(e.message,true)}};
 $('stop').onclick=async()=>{try{await post('/api/stop');refresh();setTimeout(()=>{loadSites();loadZones()},1500)}catch(e){toast(e.message,true)}};
-$('reset').onclick=async()=>{if(!confirm('Delete every session, asset, relationship, site, finding and conduit decision in this engagement?\n\nThe assessment, site, collection point and "Prepared for" fields are cleared too, so the next engagement does not inherit this one.'))return;try{await post('/api/reset');forgetEngagementFields();refresh()}catch(e){toast(e.message,true)}};
+
 $('vendors').onclick=async()=>{try{toast('Downloading the official IEEE OUI database');const d=await post('/api/update-vendors');toast(`Loaded ${d.entries} vendor prefixes`);refresh()}catch(e){toast(e.message,true)}};
 $('import').onclick=async()=>{const f=$('pcap').files[0];if(!f)return toast('Choose a PCAP file first',true);try{toast('Importing '+f.name);const r=await fetch('/api/import-pcap',{method:'POST',headers:{'Content-Type':'application/vnd.tcpdump.pcap','X-Assessment':$('assessment').value,'X-Site':$('site').value,'X-Collection-Point':$('point').value,'X-Filename':f.name,'X-Rate-Limit':String(Number($('throttle').value)||0)},body:f}).catch(()=>{throw new OfflineError(OFFLINE_MSG)}),d=await parseJson(r);if(!r.ok)throw Error(d.error);toast(`Imported ${d.packets} packets`);refresh()}catch(e){toast(e.message,true)}};
 $('assets').onchange=async e=>{const id=Number(e.target.dataset.level);if(!id)return;try{await post('/api/assets/'+id,{purdue_level:e.target.value});toast('Purdue level saved');delete lastRender.assets;delete lastRender.relationships;refresh();loadZones()}catch(err){toast(err.message,true)}};

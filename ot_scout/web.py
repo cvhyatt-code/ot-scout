@@ -115,6 +115,78 @@ class AppServer(ThreadingHTTPServer):
         out.sort(key=lambda e: (not e["current"], -e["modified"]))
         return out
 
+    def _engagement_path(self, file: str) -> Path:
+        """Resolve an engagement filename from the browser to a real database in the data directory."""
+        candidate = (self.data_dir / Path(str(file)).name).resolve()
+        if candidate.parent != self.data_dir or candidate.suffix != ".db" or not candidate.is_file():
+            raise ValueError("Unknown engagement")
+        if candidate == Path(self.demo_database).resolve():
+            raise ValueError("The demonstration data set is not an engagement")
+        return candidate
+
+    def engagement_detail(self, file: str) -> dict:
+        """Everything this engagement owns on disk, so you can see it before deciding to remove it."""
+        path = self._engagement_path(file)
+        current = path == Path(self.store.path).resolve()
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        db.row_factory = sqlite3.Row
+        try:
+            info = describe_database(path) or {"name": "", "sessions": 0, "assets": 0}
+            exported = ""
+            if "meta" in {r["name"] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+                row = db.execute("SELECT value FROM meta WHERE key='evidence_exported_at'").fetchone()
+                exported = row["value"] if row else ""
+            sessions = []
+            for s in db.execute("SELECT id,site,collection_point,started_at,source_type,frames,pcap_path FROM sessions ORDER BY id"):
+                cap = None
+                if s["pcap_path"]:
+                    p = Path(s["pcap_path"])
+                    cap = {"name": p.name, "bytes": p.stat().st_size if p.is_file() else 0, "missing": not p.is_file()}
+                sessions.append({"id": s["id"], "site": s["site"], "collection_point": s["collection_point"],
+                                 "started_at": s["started_at"], "source_type": s["source_type"],
+                                 "frames": s["frames"], "capture": cap})
+        finally:
+            db.close()
+        db_bytes = sum(p.stat().st_size for p in (path, Path(str(path) + "-wal"), Path(str(path) + "-shm")) if p.is_file())
+        cap_bytes = sum(s["capture"]["bytes"] for s in sessions if s["capture"])
+        return {"file": path.name, "name": info["name"] or path.stem, "current": current,
+                "sessions": sessions, "assets": info["assets"], "exported_at": exported,
+                "database_bytes": db_bytes, "capture_bytes": cap_bytes, "total_bytes": db_bytes + cap_bytes}
+
+    def delete_engagement(self, file: str, confirm: str) -> dict:
+        """Remove an engagement's database and the captures it owns. There is no undo.
+
+        Deliberately refuses the engagement you are standing in: you have to switch away first, so the
+        thing being destroyed is never the thing on screen. The confirmation must be the engagement's
+        own name, which makes deleting the wrong one take real effort rather than a mis-click.
+        """
+        if self.capture.running:
+            raise ValueError("Stop the capture before deleting an engagement")
+        path = self._engagement_path(file)
+        if path == Path(self.store.path).resolve():
+            raise ValueError("Switch to a different engagement before deleting this one")
+        detail = self.engagement_detail(path.name)
+        if str(confirm).strip() != detail["name"]:
+            raise ValueError(f'Type the engagement name exactly to confirm: {detail["name"]}')
+        removed, kept = 0, 0
+        for session in detail["sessions"]:
+            cap = session["capture"]
+            if not cap or cap["missing"]:
+                continue
+            target = (self.data_dir / "captures" / cap["name"]).resolve()
+            # Only ever unlink inside our own captures directory, whatever the database recorded.
+            if target.parent != (self.data_dir / "captures").resolve() or not target.is_file():
+                kept += 1
+                continue
+            target.unlink()
+            removed += 1
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(path) + suffix)
+            if p.is_file():
+                p.unlink()
+        return {"deleted": detail["name"], "file": path.name, "captures_removed": removed,
+                "captures_kept": kept, "freed_bytes": detail["total_bytes"]}
+
     def new_engagement(self, name: str) -> dict:
         """Create a database for a new engagement and switch to it. Nothing existing is touched."""
         if self.capture.running:
@@ -229,6 +301,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"version": __version__, "changelog": read_doc("changelog"), "guide": read_doc("guide")})
         if path == "/api/database": return self._json(self.server.database_status())
         if path == "/api/engagements": return self._json({"engagements": self.server.engagements()})
+        if path == "/api/engagements/detail":
+            return self._json(self.server.engagement_detail(parse_qs(urlparse(self.path).query).get("file", [""])[0]))
         if path == "/api/copilot": return self._json(self.server.copilot.status())
         if path == "/api/vendor-status": return self._json(self.server.store.vendor_status())
         if path == "/api/assets": return self._json(self.server.store.assets_with_exposure())
@@ -299,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
         """Everything a client or a reviewer needs to check the work, with a SHA-256 manifest: the assessment
         JSON, the report, every CSV/SVG export and the raw PCAP of every live session in this data set."""
         store = self.server.store
-        stamp = __import__("time").strftime("%Y-%m-%d %H:%M:%S %Z")
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S %Z")
         fd, tmp_path = tempfile.mkstemp(suffix=".zip"); os.close(fd)
         entries = []  # (name in zip, sha256, size, note)
 
@@ -342,6 +416,9 @@ class Handler(BaseHTTPRequestHandler):
                 lines.append(f"  {digest}  {name}")
             zf.writestr("MANIFEST.txt", "\n".join(lines) + "\n")
             zf.writestr("SHA256SUMS", "".join(f"{digest}  {name}\n" for name, digest, size, note in entries))
+        # Recorded so the delete dialog can say whether this engagement was ever packaged up. It is a
+        # statement of fact, not a safeguard — the tool cannot know the export was stored anywhere safe.
+        store.meta_set("evidence_exported_at", time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         return tmp_path
 
     def _download_file(self, source: str, name: str, content_type: str, delete: bool = False):
@@ -388,15 +465,15 @@ class Handler(BaseHTTPRequestHandler):
                 question = str(self._json_body().get("question", ""))
                 export = json.loads(self.server.store.json_export())
                 return self._json({"ok": True, "answer": self.server.copilot.ask(export, question)})
+            if path == "/api/engagements/delete":
+                body = self._json_body()
+                return self._json({"ok": True, **self.server.delete_engagement(str(body.get("file", "")), str(body.get("confirm", "")))})
             if path == "/api/engagements/new":
                 return self._json({"ok": True, **self.server.new_engagement(str(self._json_body().get("name", "")))})
             if path == "/api/database/switch":
                 return self._json({"ok": True, **self.server.switch_database(str(self._json_body().get("target", "")))})
             if path == "/api/stop":
                 self.server.capture.stop(); return self._json({"ok": True})
-            if path == "/api/reset":
-                if self.server.capture.running: raise ValueError("Stop capture before resetting")
-                self.server.store.reset(); return self._json({"ok": True})
             if path == "/api/update-vendors":
                 if self.server.capture.running: raise ValueError("Stop capture before updating the vendor database")
                 count = self.server.store.update_vendors()

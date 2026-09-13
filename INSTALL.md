@@ -79,7 +79,11 @@ Two things worth knowing:
 
 The Collect form's Assessment, Site and Collection point, and the report's "Prepared for", are remembered per engagement — so a new engagement starts with them empty rather than inheriting the last customer's. What follows the laptop instead of the customer is the capture interface, the throttle, the save-PCAP setting, your own name and the report title.
 
-**See it before you use it.** Click **Load demo data** in the header. It builds a fictitious water utility — Riverbend Regional Water Utility — with captures, decoded fingerprints, a walkdown inventory, Purdue placement, conduit decisions and findings, so you can walk every tab without a plant. Your own database is untouched; **Back to my data** switches back.
+**Finishing an engagement.** When the report is generated and the evidence package is stored somewhere you trust, open the engagement in that same panel and use the **Danger zone** at the bottom. It lists the database and every raw capture the engagement owns, with sizes, and tells you whether an evidence package was ever exported from it. The button only becomes active once you type the engagement's name. It then deletes the database and those captures, and nothing else. There is no undo and nothing goes to a recycle bin, so this is the moment to be sure the package is safe — OT Scout records that you generated one, but it cannot know where you put it.
+
+You cannot delete the engagement you are currently in; switch to another one first, so the data set being destroyed is never the one on screen.
+
+**See it before you use it.** Open **Engagement** in the header and load the demonstration data. It builds a fictitious water utility — Riverbend Regional Water Utility — with captures, decoded fingerprints, a walkdown inventory, Purdue placement, conduit decisions and findings, so you can walk every tab without a plant. It lives in its own database, so your engagements are untouched; the same panel switches back.
 
 ## Why root, and what you lose without it
 
@@ -104,7 +108,7 @@ That split means **two different counters can climb, and they mean opposite thin
 
 Dropped frames make the inventory for that session incomplete in a way nobody can quantify, which is why the report raises an amber callout in the coverage section when any session dropped frames. Unparsed frames are recoverable, so they don't.
 
-**One thing at a time.** OT Scout refuses, with a clear message, to import a PCAP, reset the database, update the vendor table or switch data sets while a capture is running. That is deliberate — those operations compete with the live capture for CPU and for SQLite, and that contention is exactly what produces dropped frames. Stop the capture first.
+**One thing at a time.** OT Scout refuses, with a clear message, to import a PCAP, update the vendor table, switch engagements or delete one while a capture is running. That is deliberate — those operations compete with the live capture for CPU and for SQLite, and that contention is exactly what produces dropped frames. Stop the capture first.
 
 ## Importing a PCAP
 
@@ -124,7 +128,7 @@ Two constraints worth knowing before you're standing in a plant:
 
 ## Reaching the UI
 
-**The web interface has no authentication.** Anyone who can reach the port can export the entire evidence package for the engagement, write the model API key, or reset the database. There are no accounts, no password, no token.
+**The web interface has no authentication.** Anyone who can reach the port can export the entire evidence package for the engagement, write the model API key, or delete an engagement along with its raw captures. There are no accounts, no password, no token.
 
 That is a deliberate choice for a tool bound to localhost on the assessor's own laptop, and it is the reason the default bind address is `127.0.0.1`.
 
