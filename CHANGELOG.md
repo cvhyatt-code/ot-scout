@@ -2,6 +2,14 @@
 
 All notable changes to OT Scout. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.19.0 — 2026-09-13
+- **The Purdue zone diagram is now in the Word report.** It was the one thing the tool draws that never reached the client's deliverable — the report had the zone-pair table and the numbers, and the picture that makes them legible existed only on screen and in an SVG somebody had to remember to paste in. `ASSESSMENT_GUIDE.md` had been claiming for some time that the diagram "goes in the report"; it does now.
+- Drawn as native Word shapes rather than an embedded image. Word will not take the app's SVG without a raster fallback, and producing one would mean a rendering dependency this project does not have — so `purdue_layout()` emits the diagram as plain primitives (rectangles, lines, ellipses, text) and the .docx writer turns each one into a shape in a single grouped drawing. The result stays vector, stays selectable and searchable, and the third-party dependency count stays at zero.
+- The conduits in the diagram are the rows of the boundary-crossing table underneath it, numbered in the same order, because both are built from the same `zones` structure. A pair that stays within one level has no boundary to draw and is not numbered. Colour follows the worst decision on the pair — Unexpected, then Unknown, then Tolerated, then Approved.
+- The layout is sized for the printed page rather than the browser: 660 px wide, bands only for the levels in use, an External band only when something actually talks outside, two rows of asset cards per band and then "+N more", and long asset names shortened on a boundary instead of clipped. There is a test that the whole drawing fits inside the report's text area, because a diagram one pixel too tall takes a page of its own.
+- `tests/test_report_diagram.py` — 15 tests, including that the drawing's child coordinate space equals its rendered size. Word will happily scale a mismatched group but does not scale the text inside it, so that one silently leaves every label the wrong size. The suite is now 176.
+- The v0.18.0 entry said the suite was 164. It was 161; the README still said 147. Both corrected.
+
 ## v0.18.0 — 2026-09-13
 - **The Engagement panel is now an engagement manager.** Opening an engagement shows what it actually owns: the database and its size, every session with its collection point, frame count and the raw capture it wrote, and whether an evidence package was ever exported from it. You should never be asked to destroy something you have only been told the size of.
 - **Deleting a finished engagement is a first-class action**, in a Danger zone at the bottom of that view, shaped after the way GitHub deletes a repository: it enumerates exactly what goes, and the button stays disabled until you type the engagement's own name. Nothing is moved to a recycle bin — the database and the captures it owns are unlinked.
@@ -10,7 +18,7 @@ All notable changes to OT Scout. Versions are shown in the page header, browser 
 - The delete dialog reports whether an evidence package was exported and when, recorded when you generate one. It is deliberately a statement of fact and not a gate: OT Scout cannot know whether that export is stored anywhere safe, and a check it cannot really make is worse than no check, because it invites you to trust it.
 - **Reset is gone.** It emptied the current database's tables while leaving every raw capture on disk, so an assessor who pressed it believing the laptop was clean had deleted the index and kept the recording. Starting over is now a new engagement, which destroys nothing; finishing up is deleting the old one, which destroys all of it deliberately. It also sat on the Report tab two panels below "Export evidence package", which is the worst possible neighbour for a delete-everything button.
 - The header chip carries a chevron. It names the current engagement, which was the point, but nothing about it suggested that clicking it opened all of them — the affordance was in a tooltip, and tooltips are invisible.
-- `GET /api/engagements/detail`, `POST /api/engagements/delete`. `tests/test_engagements.py` grows to 38 tests; the suite is now 164.
+- `GET /api/engagements/detail`, `POST /api/engagements/delete`. `tests/test_engagements.py` grows to 38 tests; the suite is now 161.
 
 ## v0.17.1 — 2026-09-13
 - Header rebuilt in three zones — identity, which data set is on screen, what the tool is doing — separated by dividers rather than by spacing. It had accumulated five different kinds of thing at one visual weight, so nothing indicated what to read first.

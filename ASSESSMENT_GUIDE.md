@@ -46,7 +46,7 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 
 - Assign a **Purdue level** to every physical asset. Accept the suggested levels where the evidence is good, then correct against drawings and what you saw on the walkdown.
 - Look at the zone-pair matrix. Boundary crossings, DMZ bypasses and direct external conversations are where findings come from.
-- Export the diagram — it goes in the report and it is the picture the client remembers.
+- The diagram is the picture the client remembers, and it goes into the Word report on its own — drawn there, with the boundary crossings numbered to match the table underneath it. Export the SVG as well if you want it full size for a slide or a wall print.
 
 ## 6. Findings
 

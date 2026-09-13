@@ -207,11 +207,84 @@ class Doc:
         self.body.append(self._p("", after=120))
 
     # -- packaging
+    EMU = 9525  # EMU per pixel at 96 dpi
+
+    def diagram(self, layout: dict, name: str = "Purdue zone diagram"):
+        """Draw a diagram from plain primitives as native Word shapes.
+
+        Word will not take the SVG the app exports without a raster fallback, and rasterising one needs
+        a rendering engine this project deliberately does not depend on. Drawing it as shapes keeps the
+        report vector, selectable and searchable, and keeps the dependency count at zero. The group's
+        child coordinate space is set equal to its rendered size so nothing is scaled — text inside a
+        scaled group does not scale with it, which would leave the labels the wrong size.
+        """
+        emu = lambda v: int(round(v * self.EMU))
+        w, h = layout["width"], layout["height"]
+        self._shape_id = getattr(self, "_shape_id", 100)
+        self._shape_id += 1
+        outer = self._shape_id
+        body = []
+        for sh in layout["shapes"]:
+            self._shape_id += 1
+            kind = sh["t"]
+            if kind == "line":
+                x, y = min(sh["x1"], sh["x2"]), min(sh["y1"], sh["y2"])
+                cx, cy = abs(sh["x2"] - sh["x1"]), abs(sh["y2"] - sh["y1"])
+                body.append(self._wsp(self._shape_id, x, y, cx, cy, "line", None, sh["color"], sh.get("w", 1)))
+            elif kind == "ellipse":
+                r = sh["r"]
+                body.append(self._wsp(self._shape_id, sh["cx"] - r, sh["cy"] - r, r * 2, r * 2, "ellipse",
+                                      sh.get("fill"), sh.get("stroke"), sh.get("sw", 1)))
+            elif kind == "rect":
+                body.append(self._wsp(self._shape_id, sh["x"], sh["y"], sh["w"], sh["h"],
+                                      "roundRect" if sh.get("round") else "rect", sh.get("fill"), sh.get("stroke"), 1))
+            elif kind == "text":
+                body.append(self._wsp(self._shape_id, sh["x"], sh["y"], sh["w"], sh["h"], "rect", None, None, 0,
+                                      text=sh["s"], size=sh.get("size", 7), bold=sh.get("bold", False),
+                                      color=sh.get("color", "#16212b"), align=sh.get("align"), wrap=sh.get("wrap")))
+        return self.body.append(
+            f'<w:p><w:pPr><w:spacing w:before="60" w:after="120"/></w:pPr><w:r><w:drawing>'
+            f'<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{emu(w)}" cy="{emu(h)}"/>'
+            f'<wp:docPr id="{outer}" name="{escape(name)}" descr="{escape(name)}"/>'
+            f'<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">'
+            f'<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/>'
+            f'<a:ext cx="{emu(w)}" cy="{emu(h)}"/><a:chOff x="0" y="0"/><a:chExt cx="{emu(w)}" cy="{emu(h)}"/>'
+            f'</a:xfrm></wpg:grpSpPr>{"".join(body)}</wpg:wgp></a:graphicData></a:graphic>'
+            f'</wp:inline></w:drawing></w:r></w:p>')
+
+    def _wsp(self, sid, x, y, w, h, geom, fill, line, lw, text=None, size=7, bold=False, color="#16212b",
+             align=None, wrap=False):
+        emu = lambda v: int(round(v * self.EMU))
+        hexed = lambda v: (v or "").lstrip("#").upper()
+        out = [f'<wps:wsp><wps:cNvPr id="{sid}" name="s{sid}"/><wps:cNvSpPr txBox="1"/><wps:spPr>',
+               f'<a:xfrm><a:off x="{emu(x)}" y="{emu(y)}"/><a:ext cx="{max(0, emu(w))}" cy="{max(0, emu(h))}"/></a:xfrm>',
+               f'<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>',
+               f'<a:solidFill><a:srgbClr val="{hexed(fill)}"/></a:solidFill>' if fill else '<a:noFill/>']
+        out.append(f'<a:ln w="{emu(lw)}"><a:solidFill><a:srgbClr val="{hexed(line)}"/></a:solidFill></a:ln>'
+                   if line and lw else '<a:ln><a:noFill/></a:ln>')
+        out.append('</wps:spPr>')
+        if text is not None:
+            jc = '<w:jc w:val="center"/>' if align == "center" else ''
+            out.append('<wps:txbx><w:txbxContent>'
+                       f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>{jc}</w:pPr>'
+                       f'<w:r><w:rPr>{"<w:b/>" if bold else ""}<w:color w:val="{hexed(color)}"/>'
+                       f'<w:sz w:val="{int(round(size * 2))}"/><w:szCs w:val="{int(round(size * 2))}"/></w:rPr>'
+                       f'<w:t xml:space="preserve">{escape(text)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>'
+                       f'<wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" wrap="{"square" if wrap else "none"}"><a:noAutofit/></wps:bodyPr>')
+        else:
+            out.append('<wps:bodyPr/>')
+        out.append('</wps:wsp>')
+        return "".join(out)
+
     def build(self, title: str, author: str, footer_text: str) -> bytes:
         sect = (f'<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/>'
                 f'<w:pgSz w:w="{self.PAGE_W}" w:h="15840"/><w:pgMar w:top="1080" w:right="{self.MARGIN}" w:bottom="1080" w:left="{self.MARGIN}" w:header="540" w:footer="540" w:gutter="0"/></w:sectPr>')
         ns = ('xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-              'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"')
+              'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+              'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+              'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+              'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+              'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"')
         document = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {ns}><w:body>{"".join(self.body)}{sect}</w:body></w:document>'
         footer = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr {ns}><w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="right"/></w:pPr>'
                   f'{self.run(footer_text + "   Page ", size=8, color=MUTED)}'
@@ -297,6 +370,102 @@ def derive_coverage(data: dict) -> dict:
     if latest.get("packets"):
         return {"level": "limited", "message": "No meaningful third-party unicast traffic observed. This appears to be an ordinary access port or limited feed; inventory is incomplete."}
     return {"level": "none", "message": "No packets observed. Verify the interface, cabling and capture point."}
+
+
+
+BAND_ORDER = ["External", "Level 5", "Level 4", "Industrial DMZ", "Level 3", "Level 2", "Level 1", "Level 0",
+              "Network infrastructure", "Unassigned"]
+BAND_FILLS = {"External": "#f3e8ff", "Level 5": "#e9eff3", "Level 4": "#e9eff3", "Industrial DMZ": "#fff7d6",
+              "Level 3": "#e3f0f5", "Level 2": "#e3f0f5", "Level 1": "#e3f5ea", "Level 0": "#e3f5ea",
+              "Network infrastructure": "#f3f6f8", "Unassigned": "#fde8e6"}
+CONDUIT_COLORS = {"Approved": "#18794e", "Tolerated": "#9a6700", "Unexpected": "#b42318", "Unknown": "#617181"}
+
+
+def purdue_layout(zones: dict, width: int = 660) -> dict | None:
+    """The Purdue band diagram as plain primitives, laid out to fit a printed page.
+
+    Built from the same `zones` the report's own tables are built from, so the numbered conduits here
+    are the rows of the boundary-crossing table underneath, in order. Drawn rather than embedded: Word
+    will not take the app's SVG without a raster fallback, and producing one would mean a rendering
+    dependency this project does not have. Coordinates are pixels at 96 dpi, origin top-left.
+    """
+    levels = zones.get("levels") or {}
+    if not levels:
+        return None
+    pairs = [p for p in (zones.get("pairs") or []) if p.get("level_a") != p.get("level_b")]
+    bands = [lv for lv in BAND_ORDER if lv in levels]
+    if any("External" in (p.get("level_a"), p.get("level_b")) for p in pairs):
+        bands.insert(0, "External")
+    if not bands:
+        return None
+    drawn = [p for p in pairs if p.get("level_a") in bands and p.get("level_b") in bands]
+
+    def fit(value, n):
+        value = value or ""
+        return value if len(value) <= n else (value[:n - 1].rstrip() + "\u2026")
+
+    pad, label_w, box_w, box_h, gap = 4, 66, 92, 16, 5
+    n = len(drawn)
+    conduit_w = max(60, min(int(width * 0.40), n * 22 + 32)) if n else 0
+    card_right = width - pad - conduit_w
+    cols = max(1, (card_right - (pad + label_w)) // (box_w + gap))
+    rows_for = {lv: min(2, -(-max(1, len(levels.get(lv, {}).get("names") or [])) // cols)) if lv != "External" else 1
+                for lv in bands}
+    band_h = {lv: 18 + rows_for[lv] * (box_h + 4) for lv in bands}
+    bands_h = sum(band_h.values())
+    legend_y = pad + bands_h + 8
+    height = legend_y + 14
+
+    out, y_of, y = [], {}, pad
+    for lv in bands:
+        h = band_h[lv]
+        y_of[lv] = y
+        out.append({"t": "rect", "x": pad, "y": y, "w": width - 2 * pad, "h": h - 3, "round": True,
+                    "fill": BAND_FILLS.get(lv, "#eeeeee"), "stroke": "#d9e1e7"})
+        out.append({"t": "text", "x": pad + 5, "y": y + 3, "w": label_w - 8, "h": h - 8, "s": lv,
+                    "size": 7, "bold": True, "color": "#16212b", "wrap": True})
+        if lv == "External":
+            out.append({"t": "text", "x": pad + label_w, "y": y + 4, "w": 300, "h": 11,
+                        "s": "Endpoints outside the assessed network", "size": 6, "color": "#617181"})
+        names = (levels.get(lv, {}).get("names") or []) if lv != "External" else []
+        capacity = cols * rows_for[lv]
+        for idx, nm in enumerate(names):
+            cx = pad + label_w + (idx % cols) * (box_w + gap)
+            cy = y + 15 + (idx // cols) * (box_h + 4)
+            if idx == capacity - 1 and len(names) > capacity:
+                out.append({"t": "text", "x": cx, "y": cy + 3, "w": box_w, "h": 11,
+                            "s": f"+{len(names) - idx} more", "size": 6, "color": "#617181"})
+                break
+            out.append({"t": "rect", "x": cx, "y": cy, "w": box_w, "h": box_h, "round": True,
+                        "fill": "#ffffff", "stroke": "#bac7d0"})
+            out.append({"t": "text", "x": cx + 4, "y": cy + 3, "w": box_w - 8, "h": 11,
+                        "s": fit(nm, 17), "size": 6, "bold": True, "color": "#16212b"})
+        y += h
+
+    x1, x0 = width - pad - 14, card_right + 18
+    step = min(34, (x1 - x0) / max(1, n - 1)) if n > 1 else 0
+    for i, pair in enumerate(drawn):
+        hi, lo = sorted((pair["level_a"], pair["level_b"]), key=lambda v: bands.index(v))
+        top, bot = y_of[hi] + band_h[hi] - 3 - 7, y_of[lo] + 7
+        dec = pair.get("decisions") or {}
+        color = (CONDUIT_COLORS["Unexpected"] if dec.get("Unexpected") else CONDUIT_COLORS["Unknown"] if dec.get("Unknown")
+                 else CONDUIT_COLORS["Tolerated"] if dec.get("Tolerated") else CONDUIT_COLORS["Approved"])
+        x = round(x1 - i * step, 1)
+        out.append({"t": "line", "x1": x, "y1": top, "x2": x, "y2": bot, "color": color, "w": 1.25})
+        for cy in (top, bot):
+            out.append({"t": "ellipse", "cx": x, "cy": cy, "r": 2.25, "fill": color, "stroke": color})
+        my = (top + bot) / 2
+        out.append({"t": "ellipse", "cx": x, "cy": my, "r": 6.5, "fill": "#ffffff", "stroke": color, "sw": 1})
+        out.append({"t": "text", "x": x - 6.5, "y": my - 4.5, "w": 13, "h": 10, "s": str(i + 1),
+                    "size": 6, "bold": True, "color": color, "align": "center"})
+
+    for i, (name, color) in enumerate(CONDUIT_COLORS.items()):
+        out.append({"t": "rect", "x": pad + i * 66, "y": legend_y + 1, "w": 7, "h": 7, "fill": color, "stroke": color})
+        out.append({"t": "text", "x": pad + i * 66 + 10, "y": legend_y - 1, "w": 54, "h": 10,
+                    "s": name, "size": 6, "color": "#16212b"})
+    out.append({"t": "text", "x": pad + 4 * 66 + 6, "y": legend_y - 1, "w": width - (pad + 4 * 66 + 10), "h": 10,
+                "s": "Numbers are the boundary-crossing rows below, in order.", "size": 6, "color": "#617181"})
+    return {"width": width, "height": height, "shapes": out, "conduits": n}
 
 
 class Analysis:
@@ -874,10 +1043,13 @@ def build_report(data: dict, meta: dict | None = None) -> bytes:
         lv_rows = [[lv, fmt_int(v["assets"]), ", ".join(v["zones"]) or "—", ", ".join(v["names"][:8]) + (" …" if len(v["names"]) > 8 else "")] for lv, v in (a.zones.get("levels") or {}).items() if v["assets"] or lv != "Unassigned"]
         d.table(["Purdue level", "Assets", "ISA-62443 zones", "Assets (first 8)"], lv_rows or [["No levels assigned", "", "", ""]], [0.16, 0.08, 0.22, 0.54], size=8)
         d.muted(f"{a.zones.get('infrastructure', 0)} network infrastructure device(s) span levels and are not assigned. {a.zones.get('assigned_by_assessor', 0)} level(s) set by the assessor; {a.zones.get('assigned_from_suggestion', 0)} accepted from the tool's protocol-role suggestion and still subject to drawing validation; {a.zones.get('suggestions_pending', 0)} suggested but not accepted; {a.zones.get('no_suggestion', 0)} with no passive basis for a level.")
+        layout = purdue_layout(a.zones)
+        if layout:
+            d.diagram(layout)
         pair_rows = [[f"{p['level_a']} ↔ {p['level_b']}", (p["crossing"] or "Within level", RED if "bypass" in (p["crossing"] or "") or "external" in (p["crossing"] or "") else AMBER if p["crossing"] else GREEN, True), fmt_int(p["relationships"]), p["protocols"],
                       f"A {p['decisions'].get('Approved', 0)} / T {p['decisions'].get('Tolerated', 0)} / U {p['decisions'].get('Unexpected', 0)} / ? {p['decisions'].get('Unknown', 0)}"] for p in a.zones.get("pairs") or []]
         d.table(["Zone pair", "Boundary", "Relationships", "Protocols", "Decisions (A/T/U/?)"], pair_rows or [["No unicast relationships", "", "", "", ""]], [0.22, 0.28, 0.10, 0.22, 0.18], size=8)
-        d.muted("A = approved, T = tolerated, U = unexpected, ? = not yet reviewed. The Purdue diagram is exported separately from the tool as SVG (Export diagram) for inclusion in the delivered report.")
+        d.muted("A = approved, T = tolerated, U = unexpected, ? = not yet reviewed. The numbered conduits in the diagram above are these rows, in order; a pair that stays within one level has no boundary to draw. The same diagram exports from the tool as SVG (Export diagram) if you want it at full size.")
     d.h2("Representative relationships")
     rel_use = {"Local asset-to-asset": "Local relationship", "Asset-to-external/unknown": "External dependency — validate against policy", "Unmapped unicast": "Identify endpoints"}
     top = sorted(a.relationships, key=lambda r: -int(r.get("packets") or 0))[:20]

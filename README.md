@@ -12,7 +12,7 @@ Every screen below is the built-in demo dataset — Riverbend Regional Water Uti
 
 ![Purdue band diagram](docs/img/07-purdue-diagram.png)
 
-Every asset in its band; every conduit its own numbered line, bold where it lands and faint where it only passes through. The numbers match the zone-pair table, and the whole thing exports as SVG for the report.
+Every asset in its band; every conduit its own numbered line, bold where it lands and faint where it only passes through. The numbers match the zone-pair table. It is redrawn into the Word report as native Word shapes, and exports as SVG for anywhere else.
 
 ### Communications, collapsed to relationships
 
@@ -63,7 +63,7 @@ Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification,
 ```bash
 git clone https://github.com/cvhyatt-code/ot-scout.git
 cd ot-scout
-python3 -m unittest discover -s tests   # 147 tests
+python3 -m unittest discover -s tests   # 176 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
 ```
 
@@ -79,7 +79,7 @@ The tabs are in engagement order; the **Assessment guide** link in the header wa
 2. **Sites** — per-site validation checklist and the network legs / collection-point matrix; coverage per leg is computed from the sessions captured there.
 3. **Inventory** — physical assets separated from raw L2 identities, with device type, manufacturer, fingerprints and evidence. Add *documented* assets the capture can't see (serial PLCs, RTUs, radios) singly or from the CSV template; lifecycle fields (EoL, support, backups) feed draft findings.
 4. **Communications** — deduplicated relationships (one row per pair of identities, all flows folded in), with a conduit decision on each: Approved / Tolerated / Unexpected. Broadcast and service-discovery traffic is kept separate.
-5. **Zones** — Purdue level per asset (suggested from protocol role, accepted or corrected by the assessor), a zone-pair rollup and a numbered band diagram; click a row to highlight its line. Exportable as SVG.
+5. **Zones** — Purdue level per asset (suggested from protocol role, accepted or corrected by the assessor), a zone-pair rollup and a numbered band diagram; click a row to highlight its line. Drawn into the Word report, and exportable as SVG.
 6. **Findings** — register of findings/observations with rating, confidence, owner, horizon and status. Auto-drafted observations from the evidence are imported as drafts and validated by hand.
 7. **Report** — an executive readout (assets ranked by an itemised exposure score, fleet view by model, IEC 62443 requirements the findings bear on), a Word report (cover, executive readout, coverage, inventory, communications, zones, findings, roadmap, appendices), CSV/JSON/SVG exports and an evidence package with raw PCAPs and a SHA-256 manifest. `python3 -m ot_scout.report assessment.json report.docx` re-renders offline.
 
