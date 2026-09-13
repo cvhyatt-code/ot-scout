@@ -2,6 +2,15 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.17.0 — 2026-09-13
+- **Engagements.** One customer, one database — the practice `INSTALL.md` already recommended, now something the tool does rather than something you have to remember. **Engagement** in the header opens a panel that starts a new engagement (names it, creates its own database, switches to it) and lists the existing ones to return to. Nothing is deleted by either action; the engagement you leave is exactly as you left it.
+- The engagement you are in is named in the header at all times, next to the demo pill. That is not decoration. Switching used to require restarting with `--database`, which was hard to do by accident; a button is two clicks, so the current engagement has to be visible without being asked for.
+- Both actions confirm first, and say what actually happens: the other engagement is untouched, everything on screen is replaced, and a running capture is not stopped — the switch is refused instead, as it always has been.
+- Each database records its own engagement name (new `meta` table). Databases made before this release describe themselves using the assessment name of their first session, so existing work appears in the list with a sensible name and nothing needs migrating.
+- The switch target is a filename supplied by the browser, so it is reduced to a basename and required to resolve inside the data directory. Listing reads every candidate database strictly read-only — going through `Store` would have created the schema, quietly adopting any unrelated SQLite file in `data/` as an engagement.
+- `GET /api/engagements`, `POST /api/engagements/new`; `POST /api/database/switch` now also accepts an engagement's filename. `/api/status` and `/api/database` carry the engagement name.
+- New `tests/test_engagements.py` (21 tests), including the traversal cases. Suite is now 147.
+
 ## v0.16.1 — 2026-09-13
 - The fields that name a customer no longer follow you to the next engagement. Assessment, Site, Collection point and the report's "Prepared for" were remembered in browser storage under one global key, so they survived a database reset, a switch to a different `--database`, and a switch to the demo set and back. Finish at one site, start at another, press Start without re-reading the form, and that site's name is on the session, in the Word report and in the evidence package. They are now keyed to the database in use — one per engagement, as `INSTALL.md` recommends — and cleared when you reset. What stays remembered is what belongs to the laptop rather than the customer: the capture interface, the throttle, the save-PCAP setting, the assessor's own name and the report title and banner.
 - Reset says what it clears, since it now clears more than the database.

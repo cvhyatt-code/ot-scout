@@ -64,7 +64,20 @@ Everything works except starting a live capture.
 |---|---|---|
 | `--host` | `127.0.0.1` | Bind address for the web UI. See *Reaching the UI* before changing this. |
 | `--port` | `8080` | Web UI port. |
-| `--database` | `data/ot_scout_v4.db` | SQLite database. One per engagement is a good habit. |
+| `--database` | `data/ot_scout_v4.db` | SQLite database to open at startup. You rarely need this — see *Engagements* below. |
+
+## Engagements
+
+One customer, one database. Everything OT Scout holds — sessions, inventory, zones, conduit decisions, findings, the report and the evidence package — lives inside the database you are working in, so keeping engagements in separate databases is what stops one customer's assets appearing in another customer's report.
+
+**Engagement** in the header does this for you. It names the current engagement, and opens a panel with two things: start a new engagement, which creates its own database and switches to it; and a list of the engagements already on this machine, to go back to one. Neither deletes anything — the engagement you leave is exactly as you left it, and the report can be regenerated from it months later.
+
+Two things worth knowing:
+
+- **Switching is refused while a capture is running.** Stop the capture first. The tool will not quietly stop it for you.
+- **The database file is named after the engagement**, in `data/`. That is convenient for finding it later and it does put the customer's name on the laptop's filesystem. If your engagement letter says otherwise, name the engagement with a reference instead.
+
+The Collect form's Assessment, Site and Collection point, and the report's "Prepared for", are remembered per engagement — so a new engagement starts with them empty rather than inheriting the last customer's. What follows the laptop instead of the customer is the capture interface, the throttle, the save-PCAP setting, your own name and the report title.
 
 **See it before you use it.** Click **Load demo data** in the header. It builds a fictitious water utility — Riverbend Regional Water Utility — with captures, decoded fingerprints, a walkdown inventory, Purdue placement, conduit decisions and findings, so you can walk every tab without a plant. Your own database is untouched; **Back to my data** switches back.
 

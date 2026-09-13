@@ -136,6 +136,34 @@ class Store:
         self.generation += 1
         self._cache = {}
 
+    def meta_get(self, key: str, default: str = "") -> str:
+        with self.connect() as db:
+            row = db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def meta_set(self, key: str, value: str) -> None:
+        with self.lock, self.connect() as db:
+            db.execute("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                       (key, str(value)))
+        self._bump()
+
+    def engagement_name(self) -> str:
+        """What this database is called. Falls back to the assessment name of its first session, so
+        databases created before engagements existed still describe themselves."""
+        def compute():
+            name = self.meta_get("engagement")
+            if name:
+                return name
+            with self.connect() as db:
+                row = db.execute("SELECT assessment FROM sessions ORDER BY id LIMIT 1").fetchone()
+            return (row["assessment"] if row else "").strip()
+        return self._cached("engagement_name", compute)
+
+    def counts(self) -> dict:
+        with self.connect() as db:
+            return {"sessions": db.execute("SELECT COUNT(*) c FROM sessions").fetchone()["c"],
+                    "assets": db.execute("SELECT COUNT(*) c FROM assets").fetchone()["c"]}
+
     def _cached(self, key, compute):
         hit = self._cache.get(key)
         if hit and hit[0] == self.generation:
@@ -154,6 +182,9 @@ class Store:
     def _init(self):
         with self.connect() as db:
             db.executescript("""
+            CREATE TABLE IF NOT EXISTS meta (
+              key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS sessions (
               id INTEGER PRIMARY KEY, assessment TEXT NOT NULL, site TEXT NOT NULL,
               collection_point TEXT NOT NULL, interface TEXT NOT NULL,

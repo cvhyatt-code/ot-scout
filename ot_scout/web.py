@@ -4,8 +4,10 @@ import hashlib
 import json
 import mimetypes
 import os
+import sqlite3
 import sys
 import tempfile
+import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +28,38 @@ MAX_UPLOAD = 512 * 1024 * 1024
 
 DOCS = {"changelog": ("CHANGELOG.md", "No changelog shipped with this build."),
         "guide": ("ASSESSMENT_GUIDE.md", "No assessment guide shipped with this build.")}
+
+
+def describe_database(path: Path) -> dict | None:
+    """Name and size of an assessment database, read strictly read-only.
+
+    Opening it through Store would create the schema, which would quietly adopt any stray SQLite file
+    in the data directory as an engagement. This only reads, and returns None for anything that is not
+    one of ours.
+    """
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        db.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return None
+    try:
+        tables = {r["name"] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "sessions" not in tables:
+            return None
+        name = ""
+        if "meta" in tables:
+            row = db.execute("SELECT value FROM meta WHERE key='engagement'").fetchone()
+            name = (row["value"] if row else "").strip()
+        if not name:
+            row = db.execute("SELECT assessment FROM sessions ORDER BY id LIMIT 1").fetchone()
+            name = (row["assessment"] if row else "").strip()
+        return {"name": name,
+                "sessions": db.execute("SELECT COUNT(*) c FROM sessions").fetchone()["c"],
+                "assets": db.execute("SELECT COUNT(*) c FROM assets").fetchone()["c"] if "assets" in tables else 0}
+    except sqlite3.DatabaseError:
+        return None
+    finally:
+        db.close()
 
 
 def read_doc(name: str) -> str:
@@ -52,6 +86,54 @@ class AppServer(ThreadingHTTPServer):
         data_dir = Path(store.path).parent
         self.copilot = CopilotService(data_dir / "copilot-settings.json", data_dir / "copilot-log.jsonl")
 
+    @property
+    def data_dir(self) -> Path:
+        return Path(self.main_database).resolve().parent
+
+    def _adopt(self, store) -> None:
+        store.vendors = self.store.vendors      # keep the loaded OUI table
+        self.store = store
+        self.capture.store = store
+
+    def engagements(self) -> list[dict]:
+        """Every assessment database in the data directory. The demo set is not an engagement."""
+        demo, current = Path(self.demo_database).resolve(), Path(self.store.path).resolve()
+        out = []
+        for path in self.data_dir.glob("*.db"):
+            resolved = path.resolve()
+            if resolved == demo:
+                continue
+            if resolved == current:
+                info = {"name": self.store.engagement_name(), **self.store.counts()}
+            else:
+                info = describe_database(path)
+                if info is None:
+                    continue
+            out.append({"file": path.name, "name": info["name"] or path.stem, "unnamed": not info["name"],
+                        "sessions": info["sessions"], "assets": info["assets"],
+                        "modified": int(path.stat().st_mtime), "current": resolved == current})
+        out.sort(key=lambda e: (not e["current"], -e["modified"]))
+        return out
+
+    def new_engagement(self, name: str) -> dict:
+        """Create a database for a new engagement and switch to it. Nothing existing is touched."""
+        if self.capture.running:
+            raise ValueError("Stop the capture before starting a new engagement")
+        name = " ".join(str(name).split())[:80]
+        if not name:
+            raise ValueError("Give the engagement a name")
+        slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in name.lower())
+        slug = "-".join(p for p in slug.split("-") if p)[:40] or "engagement"
+        stem, n = f"{time.strftime('%Y%m%d')}-{slug}", 1
+        candidate = self.data_dir / f"{stem}.db"
+        while candidate.exists():
+            n += 1
+            candidate = self.data_dir / f"{stem}-{n}.db"
+        store = Store(str(candidate))
+        store.meta_set("engagement", name)
+        self._adopt(store)
+        return self.database_status()
+
     def switch_database(self, target: str) -> dict:
         if self.capture.running:
             raise ValueError("Stop capture before switching data sets")
@@ -68,11 +150,16 @@ class AppServer(ThreadingHTTPServer):
             new_store = Store(self.demo_database)
         elif target == "main":
             new_store = Store(self.main_database)
+        elif target.endswith(".db"):
+            # The filename comes from the browser, so take the basename only and require the result to
+            # sit directly in the data directory — no traversal, no opening files elsewhere on the disk.
+            candidate = (self.data_dir / Path(target).name).resolve()
+            if candidate.parent != self.data_dir or not candidate.is_file():
+                raise ValueError("Unknown data set")
+            new_store = Store(str(candidate))
         else:
             raise ValueError("Unknown data set")
-        new_store.vendors = self.store.vendors  # keep the loaded OUI table
-        self.store = new_store
-        self.capture.store = new_store
+        self._adopt(new_store)
         return self.database_status()
 
     def build_demo(self):
@@ -83,7 +170,9 @@ class AppServer(ThreadingHTTPServer):
 
     def database_status(self) -> dict:
         current = "demo" if Path(self.store.path).resolve() == Path(self.demo_database).resolve() else "main"
-        return {"current": current, "path": self.store.path, "demo_exists": Path(self.demo_database).exists(),
+        return {"current": current, "path": self.store.path, "file": Path(self.store.path).name,
+                "engagement": "" if current == "demo" else self.store.engagement_name(),
+                "demo_exists": Path(self.demo_database).exists(),
                 "label": "DEMO DATA (fictitious Riverbend Regional Water Utility)" if current == "demo" else "Live assessment data"}
 
 
@@ -132,12 +221,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         if path == "/api/status":
-            store = self.server.store
-            return self._json({**self.server.capture.status(), **store.dashboard(), "coverage": store.coverage(), "generation": store.generation, "dataset": self.server.database_status()["current"]})
+            store, db = self.server.store, self.server.database_status()
+            return self._json({**self.server.capture.status(), **store.dashboard(), "coverage": store.coverage(),
+                               "generation": store.generation, "dataset": db["current"], "engagement": db["engagement"]})
         if path == "/api/interfaces": return self._json(interfaces())
         if path == "/api/about":
             return self._json({"version": __version__, "changelog": read_doc("changelog"), "guide": read_doc("guide")})
         if path == "/api/database": return self._json(self.server.database_status())
+        if path == "/api/engagements": return self._json({"engagements": self.server.engagements()})
         if path == "/api/copilot": return self._json(self.server.copilot.status())
         if path == "/api/vendor-status": return self._json(self.server.store.vendor_status())
         if path == "/api/assets": return self._json(self.server.store.assets_with_exposure())
@@ -297,6 +388,8 @@ class Handler(BaseHTTPRequestHandler):
                 question = str(self._json_body().get("question", ""))
                 export = json.loads(self.server.store.json_export())
                 return self._json({"ok": True, "answer": self.server.copilot.ask(export, question)})
+            if path == "/api/engagements/new":
+                return self._json({"ok": True, **self.server.new_engagement(str(self._json_body().get("name", "")))})
             if path == "/api/database/switch":
                 return self._json({"ok": True, **self.server.switch_database(str(self._json_body().get("target", "")))})
             if path == "/api/stop":
