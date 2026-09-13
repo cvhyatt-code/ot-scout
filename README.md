@@ -4,6 +4,46 @@ A passive OT/ICS assessment tool: plug a laptop into a mirror port, capture what
 
 It is an assessment aid for an authorized engagement, not a monitoring platform. Discovery results are evidence, not proof of complete coverage: inactive, encrypted, non-IP and unmonitored devices still need drawings, customer records and a physical walkdown. The tool is built around that limitation rather than hiding it.
 
+## What it looks like
+
+A guided walkthrough of every tab is in **[`docs/OT_Scout_Walkthrough_v0.14.pdf`](docs/OT_Scout_Walkthrough_v0.14.pdf)** — GitHub renders it in the browser, so you can see the whole tool without cloning anything. Every screen below is the built-in demo dataset (Riverbend Regional Water Utility, entirely fictitious), which loads in the app with one click.
+
+### Purdue zones and conduits
+
+![Purdue band diagram](docs/img/07-purdue-diagram.png)
+
+Every asset in its band; every conduit its own numbered line, bold where it lands and faint where it only passes through. The numbers match the zone-pair table, and the whole thing exports as SVG for the report.
+
+### Communications, collapsed to relationships
+
+![Communications tab](docs/img/04-communications.png)
+
+One row per device pair with every flow folded in, labelled by the Purdue boundary it crosses, with a conduit decision on each: Approved, Tolerated or Unexpected. Broadcast and service-discovery traffic is kept in a separate table on purpose.
+
+### Findings register
+
+![Findings register](docs/img/08-findings.png)
+
+Observations drafted from the evidence arrive with IEC 62443 and ATT&CK for ICS references pre-filled. Every one is a draft: the assessor validates it, rewrites it in plain language, sets rating and confidence, names an owner and a horizon — or rejects it. One finding per problem class, with links to every instance.
+
+### Executive readout
+
+![Executive readout](docs/img/09-executive-readout.png)
+
+Assets ranked by an itemised exposure score (a prioritisation score, not a vulnerability score), a fleet view by model, and the 62443 requirements the findings bear on. The same three tables lead the Word report.
+
+### Scout Assist
+
+![Scout Assist](docs/img/11-scout-assist.png)
+
+A language model over the assessment's own evidence, answering in a fixed structure and checked against the evidence ids it was handed — anything it cites that OT Scout did not supply is flagged. It analyses evidence; it never becomes a source of it. Local or cloud backend, the assessor's choice.
+
+### Collect
+
+![Collect tab](docs/img/01-collect.png)
+
+Where an engagement starts: pick the interface, name the site and collection point, start listening. Visibility confidence says what the access method can and cannot see, instead of pretending the capture was complete.
+
 ## Passive means passive
 
 Capture opens a raw socket on the chosen interface in promiscuous mode and reads frames. There is no code path that transmits: no scanning, no probing, no queries to any device, no credentials for anything. Nothing on the OT network ever talks to the collection laptop — it only sees a copy of traffic from a SPAN/mirror port or a TAP. If all you have is an ordinary access port, the tool tells you so (Visibility confidence on the Collect tab) instead of pretending it saw everything.
