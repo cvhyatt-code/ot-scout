@@ -6,7 +6,7 @@ It is an assessment aid for an authorized engagement, not a monitoring platform.
 
 ## What it looks like
 
-A guided walkthrough of every tab is in **[`docs/OT_Scout_Walkthrough_v0.14.pdf`](docs/OT_Scout_Walkthrough_v0.14.pdf)** — GitHub renders it in the browser, so you can see the whole tool without cloning anything. Every screen below is the built-in demo dataset (Riverbend Regional Water Utility, entirely fictitious), which loads in the app with one click.
+Every screen below is the built-in demo dataset — Riverbend Regional Water Utility, entirely fictitious, external endpoints in the RFC 5737 documentation range — which loads in the app with one click. GitHub renders them inline, so you can see the whole tool without cloning anything. The full set of tab screenshots is in [`docs/img/`](docs/img).
 
 ### Purdue zones and conduits
 
