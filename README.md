@@ -84,3 +84,15 @@ CHANGELOG.md           every version, shown from the app's About link
 ## Status
 
 Prototype, actively developed. Version is in `ot_scout/__init__.py` and shown in the header, browser tab, startup line and About dialog. See `CHANGELOG.md`.
+
+## License
+
+Copyright (C) 2026 Higate Ventures LLC.
+
+OT Scout is free software: you can redistribute it and/or modify it under the terms of the **GNU Affero General Public License, version 3 or later**, as published by the Free Software Foundation. The full text is in [`LICENSE`](LICENSE).
+
+In plain terms: use it, change it, run it on client engagements, charge for the work you do with it. If you distribute a modified version — or let other people reach a modified version over a network — you have to make your source available under the same license. It stays open.
+
+It is distributed WITHOUT ANY WARRANTY, express or implied, including any warranty of merchantability or fitness for a particular purpose. See sections 15 and 16 of the license.
+
+**Use it only where you are authorized to.** OT Scout transmits nothing, but capturing traffic on a plant network is still an activity that needs the asset owner's permission and, in most environments, a change record. You are responsible for having it. "OT Scout" and "Higate Ventures" are not licensed as trademarks.
