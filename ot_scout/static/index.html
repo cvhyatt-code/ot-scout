@@ -20,7 +20,9 @@ header h1 .ver{font-weight:400;font-size:10.5px;color:#7d9dab;border:1px solid #
 .ctxchip .k{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#7d9dab;font-weight:700;flex:none}
 .ctxchip .v{font-size:13px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctxchip.demo{background:#3a2d0c;border-color:#9a6700}
-.ctxchip.demo .k{color:#e0c168}
+.ctxchip .chev{font-size:11px;color:#7d9dab;flex:none;line-height:1}
+.ctxchip:hover .chev{color:#c9dbe4}
+.ctxchip.demo .k,.ctxchip.demo .chev{color:#e0c168}
 .cstate{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#c9dbe4;white-space:nowrap}
 .cstate .cdot{width:8px;height:8px;border-radius:50%;background:#6d8794;flex:none}
 .cstate.running .cdot{background:#37d67a;box-shadow:0 0 0 3px rgba(55,214,122,.22)}
@@ -29,7 +31,7 @@ header h1 .ver{font-weight:400;font-size:10.5px;color:#7d9dab;border:1px solid #
 .cstate #timer{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#8fb0bf;font-weight:400}
 @media(max-width:1100px){.tagline{display:none}.hzones{gap:10px}.ctxchip{max-width:200px}}
 </style></head><body>
-<header><div class="brand"><img src="/icon-header.png" alt="" width="34" height="34"><div><h1>OT Scout<span class="ver">v{{VERSION}}</span></h1><div class="tagline">Passive OT/ICS assessment</div></div></div><div class="hzones"><button id="engagementBtn" class="ctxchip" title="Which data set is on screen. Click to start a new engagement, return to another, or load the demonstration data."><span class="k" id="ctxKind">Engagement</span><span class="v" id="ctxName">—</span></button><span class="hsep"></span><div class="cstate stopped" id="captureState"><span class="cdot"></span><span id="captureStatus">Stopped</span><span id="timer" class="idle" title="Capture elapsed time" hidden></span></div><span class="hsep"></span><nav class="hlinks"><a href="#" id="settingsLink" title="Model connection for Scout Assist">Settings</a><a href="#" id="guideLink" title="Step-by-step plan for running an assessment with this tool">Guide</a><a href="#" id="aboutLink" title="Version, licence and change log">About</a></nav></div></header>
+<header><div class="brand"><img src="/icon-header.png" alt="" width="34" height="34"><div><h1>OT Scout<span class="ver">v{{VERSION}}</span></h1><div class="tagline">Passive OT/ICS assessment</div></div></div><div class="hzones"><button id="engagementBtn" class="ctxchip" title="Which data set is on screen. Click to start a new engagement, return to another, or load the demonstration data."><span class="k" id="ctxKind">Engagement</span><span class="v" id="ctxName">—</span><span class="chev" aria-hidden="true">▾</span></button><span class="hsep"></span><div class="cstate stopped" id="captureState"><span class="cdot"></span><span id="captureStatus">Stopped</span><span id="timer" class="idle" title="Capture elapsed time" hidden></span></div><span class="hsep"></span><nav class="hlinks"><a href="#" id="settingsLink" title="Model connection for Scout Assist">Settings</a><a href="#" id="guideLink" title="Step-by-step plan for running an assessment with this tool">Guide</a><a href="#" id="aboutLink" title="Version, licence and change log">About</a></nav></div></header>
 <div id="offline">Can't reach the OT Scout server. It may have stopped, or this device may have lost its connection to the collection laptop — retrying automatically.</div>
 <main class="wrap">
 <nav id="tabs"><button data-tab="collect" class="active">Collect</button><button data-tab="sites">Sites</button><button data-tab="inventory">Inventory</button><button data-tab="comms">Communications</button><button data-tab="zones">Zones</button><button data-tab="findings">Findings</button><button data-tab="report">Report</button><button data-tab="copilot">Scout Assist</button></nav>
