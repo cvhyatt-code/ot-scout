@@ -2,6 +2,13 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.15.0 — 2026-09-13
+- The web interface refuses to bind a non-loopback address. It has no authentication — every endpoint is open to whoever can reach the port, including evidence export, database reset and the Scout Assist model settings that hold an API key — so `--host 0.0.0.0` now exits with a message naming exactly what would be exposed and pointing at `ssh -L` or `tailscale serve` instead. `--insecure-bind` still permits it for anyone who means it, with a startup banner. Previously a one-word flag put an unauthenticated control plane for a live assessment onto the network being assessed, and nothing said so.
+- Live capture now fails cleanly off Linux. `start()` checks for `AF_PACKET` before spawning the capture thread and returns "Live capture requires Linux — import a PCAP instead", rather than an `AttributeError` raised inside a thread where nobody sees it. Everything downstream of capture — import, inventory, zones, conduits, findings, the report — already ran on any platform; now the tool says so instead of appearing broken.
+- pcapng files are recognised and explained. Wireshark and dumpcap write pcapng by default and OT Scout reads classic libpcap, so the old "Only classic Ethernet PCAP files are supported" left people stuck on the most likely file they would be handed. The error now names the fix: `editcap -F libpcap in.pcapng out.pcap`, or `dumpcap -P` to capture in pcap format to begin with.
+- New `INSTALL.md`: which platforms do what, hardware, the SPAN/TAP conversation to have with the plant, why root buys both the raw socket and the 64 MB receive buffer, how to read dropped (gone) versus unparsed (recoverable from the PCAP) frames, remote access, getting the evidence off and verifying it, where the data and the API key live, and cleaning up afterwards.
+- New `ot_scout/bind.py` and `tests/test_bind_guard.py` (11 tests).
+
 ## v0.14.0 — 2026-09-05
 - Conduit drawer: every relationship in the selected zone pair carries its Approved / Tolerated / Unexpected / Unknown decision and business-purpose note, saved on change; the zone-pair table, diagram and drawer refresh together. Unreviewed relationships sort first with a count in the heading; a colored edge shows each decision; long lists are capped at 25 with "Show all". Conduit review no longer requires the Communications tab.
 
