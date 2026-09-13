@@ -2,6 +2,10 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.16.1 — 2026-09-13
+- The fields that name a customer no longer follow you to the next engagement. Assessment, Site, Collection point and the report's "Prepared for" were remembered in browser storage under one global key, so they survived a database reset, a switch to a different `--database`, and a switch to the demo set and back. Finish at one site, start at another, press Start without re-reading the form, and that site's name is on the session, in the Word report and in the evidence package. They are now keyed to the database in use — one per engagement, as `INSTALL.md` recommends — and cleared when you reset. What stays remembered is what belongs to the laptop rather than the customer: the capture interface, the throttle, the save-PCAP setting, the assessor's own name and the report title and banner.
+- Reset says what it clears, since it now clears more than the database.
+
 ## v0.16.0 — 2026-09-13
 - A frame the decoder cannot handle now costs that frame and nothing else. Every byte OT Scout parses was chosen by whoever is on the monitored network, or by whoever wrote the PCAP someone handed you, and an exception escaping the decode call killed the parser thread — which then wedged the reader thread on the stop sentinel, leaving the capture permanently "running" until the process was killed. The decode call is wrapped, the frame is counted as `malformed` and stays in the raw PCAP, and the capture carries on.
 - CIP `Unconnected_Send` unwrapping is bounded at 8 hops (`MAX_ROUTE_DEPTH`). Real routing nests a few; a crafted request could nest thousands, and the recursion that follows the embedded request ran until the interpreter stack gave out. A 20 KB frame was enough — trivially so from an imported PCAP, which `SECURITY.md` already treats as attacker-controlled.
