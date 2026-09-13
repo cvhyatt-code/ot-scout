@@ -138,9 +138,12 @@ If you need to reach the capture box remotely — it's running in a control room
 
 ```bash
 tailscale serve --bg --https=8443 8080
+sudo python3 run.py --allowed-host laptop.tailnet-name.ts.net
 ```
 
 The app still binds localhost only; Tailscale terminates TLS and does the authentication the app doesn't. Reach it at your tailnet name from any device signed into your tailnet.
+
+The second line is not optional, and leaving it off is the confusing failure. Serve preserves the hostname the browser typed, so the request arrives carrying your tailnet name rather than `127.0.0.1` — and the check that stops DNS rebinding refuses any name it was not told about, with a `421`. Give it the name (no port; `--allowed-host` is repeatable if you have more than one) and it answers. Every other name is still refused, so you keep the protection. An `ssh -L` port forward needs none of this: it arrives as `127.0.0.1` already.
 
 Whatever you use, the rule is the same: something must authenticate before the request reaches OT Scout.
 

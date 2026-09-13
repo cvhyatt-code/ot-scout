@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 from ot_scout import capture as capture_mod
-from ot_scout.bind import allowed_hosts, host_header_ok, origin_ok
+from ot_scout.bind import allowed_hosts, bare_host, host_header_ok, origin_ok
 from ot_scout.capture import CaptureManager
 from ot_scout.cip import MAX_ROUTE_DEPTH, _request_target
 
@@ -241,6 +241,116 @@ class GuardWiringTests(unittest.TestCase):
     def test_a_same_origin_post_still_works(self):
         status, _ = self.request("POST", "/api/stop", origin=f"http://127.0.0.1:{self.port}")
         self.assertEqual(status, 200)
+
+
+
+class TunnelHostTests(unittest.TestCase):
+    """A tunnel the assessor set up must get through without switching the rebinding check off.
+
+    Tailscale Serve preserves the name the browser typed, so a loopback bind reached that way sees a
+    Host header no process on this machine could have guessed. Naming it is the fix. Naming it must
+    not turn into accepting everything, which is the failure mode worth testing for.
+    """
+
+    TAILNET = "laptop.tailnet-name.ts.net"
+
+    def setUp(self):
+        self.allowed = allowed_hosts("127.0.0.1", [self.TAILNET])
+
+    def test_the_named_tunnel_host_is_answered(self):
+        for value in (self.TAILNET, f"{self.TAILNET}:8443", self.TAILNET.upper(), f"{self.TAILNET}."):
+            self.assertTrue(host_header_ok(value, self.allowed), value)
+
+    def test_loopback_still_works_alongside_it(self):
+        for value in ("127.0.0.1:8080", "localhost", "[::1]:8080"):
+            self.assertTrue(host_header_ok(value, self.allowed), value)
+
+    def test_every_other_name_is_still_refused(self):
+        for value in ("evil.example", "laptop.tailnet-name.ts.net.evil.example",
+                      "other-laptop.tailnet-name.ts.net", "attacker.test:8443"):
+            self.assertFalse(host_header_ok(value, self.allowed), value)
+
+    def test_a_page_served_from_the_tunnel_may_post(self):
+        self.assertTrue(origin_ok(f"https://{self.TAILNET}:8443", self.allowed))
+
+    def test_a_page_served_from_anywhere_else_may_not(self):
+        for value in ("https://evil.example", f"https://evil.example/{self.TAILNET}", "null"):
+            self.assertFalse(origin_ok(value, self.allowed), value)
+
+    def test_the_flag_accepts_a_name_with_a_port(self):
+        # The command line invites "the URL I type", which carries a port. If the allowlist stored it
+        # verbatim it would never match, because the incoming Host has its port stripped before the
+        # comparison — an allowlist entry that silently never matches is the worst kind.
+        with_port = allowed_hosts("127.0.0.1", [f"{self.TAILNET}:8443"])
+        self.assertTrue(host_header_ok(f"{self.TAILNET}:8443", with_port))
+        self.assertTrue(host_header_ok(self.TAILNET, with_port))
+
+    def test_blank_entries_do_not_widen_anything(self):
+        self.assertEqual(allowed_hosts("127.0.0.1", ["", "   ", None]), allowed_hosts("127.0.0.1"))
+
+    def test_extra_names_are_meaningless_on_an_insecure_bind(self):
+        self.assertIsNone(allowed_hosts("0.0.0.0", [self.TAILNET]))
+
+    def test_bare_host_is_what_both_sides_agree_on(self):
+        self.assertEqual(bare_host("  Laptop.TS.NET:8443 "), "laptop.ts.net")
+        self.assertEqual(bare_host("[::1]:8080"), "[::1]")
+        self.assertEqual(bare_host("::1"), "::1")
+
+
+class TunnelWiringTests(unittest.TestCase):
+    """The tunnel name, reached through the real handler."""
+
+    TAILNET = "laptop.tailnet-name.ts.net"
+
+    @classmethod
+    def setUpClass(cls):
+        from ot_scout.store import Store
+        from ot_scout.web import AppServer, Handler
+        cls.tmp = tempfile.TemporaryDirectory()
+        store = Store(str(Path(cls.tmp.name) / "tunnel.db"))
+        cls.server = AppServer(("127.0.0.1", 0), Handler, store, CaptureManager(store), allowed=[cls.TAILNET])
+        cls.port = cls.server.server_address[1]
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.tmp.cleanup()
+
+    def request(self, method, path, host, origin=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+            conn.putheader("Host", host)
+            if origin:
+                conn.putheader("Origin", origin)
+            payload = b"{}"
+            if method == "POST":
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("Content-Length", str(len(payload)))
+            conn.endheaders()
+            if method == "POST":
+                conn.send(payload)
+            response = conn.getresponse()
+            return response.status, response.read()
+        finally:
+            conn.close()
+
+    def test_a_get_through_the_tunnel_is_answered(self):
+        status, _ = self.request("GET", "/api/status", f"{self.TAILNET}:8443")
+        self.assertEqual(status, 200)
+
+    def test_a_post_from_the_tunnel_page_is_answered(self):
+        status, _ = self.request("POST", "/api/stop", f"{self.TAILNET}:8443", f"https://{self.TAILNET}:8443")
+        self.assertEqual(status, 200)
+
+    def test_another_name_pointed_at_this_port_is_still_refused(self):
+        status, body = self.request("GET", "/api/status", "ot-scout.attacker.test")
+        self.assertEqual(status, 421)
+        self.assertIn(b"attacker.test", body, "the refusal should name what it refused")
+        self.assertIn(b"--allowed-host", body, "and say what to do if the tunnel is yours")
 
 
 if __name__ == "__main__":

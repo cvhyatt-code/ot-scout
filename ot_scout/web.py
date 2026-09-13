@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .bind import allowed_hosts, host_header_ok, origin_ok
+from .bind import allowed_hosts, bare_host, host_header_ok, origin_ok
 from .capture import interfaces
 from .copilot_service import CopilotService
 from .frameworks import catalogue
@@ -75,11 +75,11 @@ class AppServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, handler, store, capture):
+    def __init__(self, address, handler, store, capture, allowed=None):
         super().__init__(address, handler)
         self.store = store
         self.capture = capture
-        self.allowed_hosts = allowed_hosts(address[0])
+        self.allowed_hosts = allowed_hosts(address[0], allowed)
         self.quiet_status = True
         self.main_database = store.path
         self.demo_database = str(Path(store.path).parent / "demo.db")
@@ -280,11 +280,19 @@ class Handler(BaseHTTPRequestHandler):
         the browser thinks it is talking to, and Origin says which page asked. Anything that has
         arrived by a route we do not recognise is refused before it reaches a handler."""
         allowed = getattr(self.server, "allowed_hosts", None)
+        seen = (self.headers.get("Host") or "")[:100]
         if not host_header_ok(self.headers.get("Host"), allowed):
-            self._json({"ok": False, "error": "Unrecognised Host header — refused."}, status=421)
+            # Name what was refused and what to do about it. A refusal the assessor cannot act on
+            # sends them looking for a network fault that isn't there; the value is one they sent
+            # us, so echoing it back tells an attacker nothing they did not already know.
+            self._json({"ok": False, "error": f"Unrecognised Host header \"{seen}\" — refused. If you reached "
+                                              f"this through a tunnel you set up, start OT Scout with "
+                                              f"--allowed-host {bare_host(seen) or '<name>'}."}, status=421)
             return False
         if self.command != "GET" and not origin_ok(self.headers.get("Origin"), allowed):
-            self._json({"ok": False, "error": "Cross-origin request refused."}, status=403)
+            self._json({"ok": False, "error": f"Cross-origin request refused: Origin "
+                                              f"\"{(self.headers.get('Origin') or '')[:100]}\" is not a name this "
+                                              f"server answers to."}, status=403)
             return False
         return True
 
