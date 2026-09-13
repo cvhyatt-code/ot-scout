@@ -1,6 +1,6 @@
 # OT Scout
 
-A passive OT/ICS assessment tool: plug a laptop into a mirror port, capture what the plant network is already saying, and turn it into an asset inventory, a communications map, a Purdue zone/conduit diagram, a findings register and a Word report — without ever sending a packet.
+A passive OT/ICS assessment tool: plug a laptop into a mirror port, capture what the plant network is already saying, and turn it into an asset inventory, a communications map, a Purdue zone/conduit diagram, a findings register and a Word report — without ever sending a packet onto that network.
 
 It is an assessment aid for an authorized engagement, not a monitoring platform. Discovery results are evidence, not proof of complete coverage: inactive, encrypted, non-IP and unmonitored devices still need drawings, customer records and a physical walkdown. The tool is built around that limitation rather than hiding it.
 
@@ -46,7 +46,9 @@ Where an engagement starts: pick the interface, name the site and collection poi
 
 ## Passive means passive
 
-Capture opens a raw socket on the chosen interface in promiscuous mode and reads frames. There is no code path that transmits: no scanning, no probing, no queries to any device, no credentials for anything. Nothing on the OT network ever talks to the collection laptop — it only sees a copy of traffic from a SPAN/mirror port or a TAP. If all you have is an ordinary access port, the tool tells you so (Visibility confidence on the Collect tab) instead of pretending it saw everything.
+Capture opens a raw socket on the chosen interface in promiscuous mode and reads frames. There is no code path that transmits on it: no scanning, no probing, no queries to any device, no credentials for anything. Nothing on the OT network ever talks to the collection laptop — it only sees a copy of traffic from a SPAN/mirror port or a TAP. If all you have is an ordinary access port, the tool tells you so (Visibility confidence on the Collect tab) instead of pretending it saw everything.
+
+Two things do leave the laptop, neither on the capture interface and neither on its own: **Update vendor database** fetches the IEEE OUI registry over HTTPS, and **Scout Assist pointed at a cloud model** sends the evidence selected for each question to that provider. Both are yours to decide — update the vendor table before you travel, use a local Scout Assist backend, and the machine stays silent. See [`INSTALL.md`](INSTALL.md).
 
 Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification, EtherNet/IP (ListIdentity and explicit Identity-object reads), OPC UA (endpoints, application/product identity, security policies, authentication), BACnet I-Am, DNP3, Siemens S7comm, Profinet DCP, plus the usual IT protocols for context (RDP, SMB, LDAP, SNMP, Telnet…).
 
@@ -144,4 +146,6 @@ In plain terms: use it, change it, run it on client engagements, charge for the 
 
 It is distributed WITHOUT ANY WARRANTY, express or implied, including any warranty of merchantability or fitness for a particular purpose. See sections 15 and 16 of the license.
 
-**Use it only where you are authorized to.** OT Scout transmits nothing, but capturing traffic on a plant network is still an activity that needs the asset owner's permission and, in most environments, a change record. You are responsible for having it. "OT Scout" and "Higate Ventures" are not licensed as trademarks.
+OT Scout has no third-party code dependencies. Attributions for the reference data and framework identifiers it does reproduce — MITRE ATT&CK for ICS, IEC 62443 and the IEEE OUI registry — are in [`NOTICE`](NOTICE).
+
+**Use it only where you are authorized to.** OT Scout never transmits on the interface it captures from, but capturing traffic on a plant network is still an activity that needs the asset owner's permission and, in most environments, a change record. You are responsible for having it. "OT Scout" and "Higate Ventures" are not licensed as trademarks.

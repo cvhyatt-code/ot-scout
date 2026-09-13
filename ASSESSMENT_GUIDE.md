@@ -6,7 +6,8 @@ A high-level plan for running a passive OT/ICS assessment with this tool. It fol
 
 - Agree scope in writing: sites, network legs, what is explicitly out (safety systems, vendor-managed cells, remote sites).
 - Confirm you have a **mirror/SPAN port or a TAP** at each collection point. An ordinary access port only shows you broadcast traffic plus whatever talks to your laptop — the visibility pill will tell you which one you got.
-- Get the change/approval for plugging in. Capture is read-only (the tool never sends a packet), but plant operations still needs to know.
+- Get the change/approval for plugging in. Capture is read-only (the tool never sends a packet on the interface it captures from), but plant operations still needs to know.
+- Decide before you travel whether the laptop may reach the internet at all. Two features do: **Update vendor database** (the IEEE OUI registry) and Scout Assist on a cloud backend. Run the vendor update at the office and pick a local Scout Assist model, and the machine makes no outbound connections on site.
 - Ask ahead for: network drawings, switch configs or port maps, the site's own asset list, historian/SCADA tag lists, remote-access inventory.
 - Bring the collection laptop with OT Scout installed and tested (`python3 -m unittest discover -s tests`, then run it once). Decide your **Throttle** setting: leave Unlimited unless the site asks you to be gentle on an old SPAN setup or your laptop is struggling.
 

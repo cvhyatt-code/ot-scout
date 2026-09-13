@@ -1,0 +1,53 @@
+OT Scout
+Copyright (c) 2026 Higate Ventures LLC
+
+Licensed under the GNU Affero General Public License, version 3 or later.
+See LICENSE for the full text.
+
+OT Scout has no third-party code dependencies. It is written against the Python
+standard library only. The attributions below cover reference data and framework
+identifiers the tool reproduces, not code.
+
+--------------------------------------------------------------------------------
+MITRE ATT&CK for ICS
+--------------------------------------------------------------------------------
+
+ot_scout/frameworks.py reproduces ATT&CK for ICS technique identifiers and their
+names, and the generated report and findings register display them.
+
+(c) 2026 The MITRE Corporation. This work is reproduced and distributed with the
+permission of The MITRE Corporation.
+
+MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.
+
+https://attack.mitre.org/resources/legal-and-branding/terms-of-use/
+
+The MITRE Corporation has not reviewed, approved or endorsed OT Scout, and no
+association with or sponsorship by MITRE is claimed or implied.
+
+--------------------------------------------------------------------------------
+IEC 62443
+--------------------------------------------------------------------------------
+
+ot_scout/frameworks.py cites IEC 62443-3-3 system requirements ("SR x.y") and
+IEC 62443-2-4 practices by identifier. The identifiers are citations. The short
+descriptions shown beside them are this project's own plain-English paraphrases
+written for this tool; they are not the clause titles and not the normative text
+of the standard, and nothing here reproduces it.
+
+IEC 62443 is published by the International Electrotechnical Commission and is
+available from IEC and its national committees. Refer to the standard itself for
+the normative requirements.
+
+The IEC has not reviewed, approved or endorsed OT Scout, and no association with
+or sponsorship by the IEC is claimed or implied.
+
+--------------------------------------------------------------------------------
+IEEE MA-L (OUI) registry
+--------------------------------------------------------------------------------
+
+The "Update vendor database" feature downloads the IEEE MA-L public listing at
+run time to map MAC address prefixes to manufacturers. The listing is published
+by the IEEE Registration Authority and is not redistributed with OT Scout.
+
+https://standards-oui.ieee.org/

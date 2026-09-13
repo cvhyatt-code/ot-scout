@@ -14,7 +14,7 @@ Live capture is Linux-only and needs root. It opens an `AF_PACKET` socket and se
 
 Everything *downstream* of capture is portable Python with no platform dependency. If someone else hands you a PCAP — a vendor, the plant's IT group, a previous visit — you can do the entire assessment on Windows or macOS: import it, build the inventory, place assets on the Purdue model, record conduit decisions, work the findings register, and generate the Word report. You just can't be the one holding the capture laptop.
 
-Known rough edge: on Windows, pressing Start capture currently fails with an unhandled Python error rather than a clear message. Use the import path.
+On Windows and macOS, Start capture refuses with "Live capture requires Linux — import a PCAP instead" rather than failing obscurely. Everything else on those platforms behaves normally.
 
 ## What you need
 
@@ -170,8 +170,19 @@ The whole `data/` directory is git-ignored, so nothing here is ever committed.
 
 **When the engagement ends**, you are holding a full passive recording of a customer's OT network on a laptop. Handle it the way your contract says to: deliver the evidence package, then remove `data/` from the laptop, or wipe the machine. Decide this before the engagement, not after.
 
+## What the laptop puts on the network
+
+**On the capture interface: nothing.** OT Scout never sends a frame there. It never probes, never queries a device, never holds credentials for anything on the monitored network. That is a real and defensible position when someone asks whether your laptop is a risk to the process, and it is the claim the tool is built around — `SECURITY.md` treats any code path that transmits on the capture interface as a serious bug whether or not anyone can exploit it.
+
+**Everywhere else: two things, both yours to decide.**
+
+| What | When | Where it goes |
+|---|---|---|
+| IEEE OUI registry download | Only when you click **Update vendor database** | `standards-oui.ieee.org` over HTTPS |
+| Scout Assist evidence | Only when you ask a question, and only on a cloud backend | The model provider you configured |
+
+Neither happens on its own and neither touches the capture interface. But neither is nothing: if the collection laptop sits on the plant network as well as the mirror, or the engagement letter restricts where evidence may go, these are the two to think about. Update the vendor table before you travel and point Scout Assist at a local model, and the machine makes no outbound connections at all.
+
 ## Authorization
 
-OT Scout transmits nothing. It never sends a frame, never probes, never queries a device, never holds credentials for anything. That is a real and defensible position when someone asks whether your laptop is a risk to the process.
-
-It is not a substitute for permission. Capturing traffic on a plant network is still an activity that needs the asset owner's authorization, and in most environments a change record. Get it in writing before you plug anything in.
+Passive capture is not a substitute for permission. Capturing traffic on a plant network is still an activity that needs the asset owner's authorization, and in most environments a change record. Get it in writing before you plug anything in.
