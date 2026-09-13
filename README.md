@@ -63,13 +63,13 @@ Decoded passively: ARP, DHCP, DNS, LLDP, HTTP, Modbus/TCP device identification,
 ```bash
 git clone https://github.com/cvhyatt-code/ot-scout.git
 cd ot-scout
-python3 -m unittest discover -s tests   # 119 tests
+python3 -m unittest discover -s tests   # 147 tests
 sudo python3 run.py                     # http://127.0.0.1:8080
 ```
 
 `--port` and `--database` do what they say. `--host` is different: the web interface has **no authentication**, so it binds to localhost and refuses any other address unless you also pass `--insecure-bind`. To reach a collector remotely, put a tunnel in front of it (`ssh -L 8080:localhost:8080 user@collector`, or `tailscale serve`) rather than opening the bind. See [`INSTALL.md`](INSTALL.md) for hardware, capture, remote access and getting the evidence off. Data lives in `data/ot_scout_v4.db` (SQLite) and is git-ignored.
 
-To see the tool populated without a plant, click **Load demo data** in the header — it builds a fictitious water utility (Riverbend Regional Water Utility) with mixed SPAN/access-port captures, decoded fingerprints, a walkdown inventory, Purdue placement, conduit decisions and findings. Your own database is untouched; **Back to my data** switches back.
+To see the tool populated without a plant, open **Engagement** in the header and load the demonstration data — it builds a fictitious water utility (Riverbend Regional Water Utility) with mixed SPAN/access-port captures, decoded fingerprints, a walkdown inventory, Purdue placement, conduit decisions and findings. It lives in its own database, so your engagements are untouched; the same panel switches back.
 
 ## How an assessment flows through it
 
@@ -125,7 +125,7 @@ CHANGELOG.md           every version, shown from the app's About link
 
 ## Status
 
-Prototype, actively developed. Version is in `ot_scout/__init__.py` and shown in the header, browser tab, startup line and About dialog. See `CHANGELOG.md`.
+Actively developed, and maintained by one person alongside consulting work — see `CONTRIBUTING.md` for what that means in practice. Version is in `ot_scout/__init__.py` and shown in the header, browser tab, startup line and About dialog. See `CHANGELOG.md`.
 
 ## Issues, contributions and security
 

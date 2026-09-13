@@ -123,7 +123,7 @@ def iter_pcap(data: bytes):
                          "reads classic libpcap. Convert it with:  editcap -F libpcap in.pcapng out.pcap  "
                          "(or capture in pcap format to begin with:  dumpcap -P -w out.pcap)")
     if magic not in formats:
-        raise ValueError("Only classic Ethernet PCAP files are supported in this prototype")
+        raise ValueError("Only classic Ethernet PCAP files are supported")
     endian, divisor = formats[magic]
     _major, _minor, _zone, _sig, _snap, linktype = struct.unpack(endian + "HHIIII", header[4:])
     if linktype != 1:

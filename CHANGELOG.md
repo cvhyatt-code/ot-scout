@@ -1,6 +1,15 @@
 # OT Scout changelog
 
-All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
+All notable changes to OT Scout. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
+
+## v0.17.1 — 2026-09-13
+- Header rebuilt in three zones — identity, which data set is on screen, what the tool is doing — separated by dividers rather than by spacing. It had accumulated five different kinds of thing at one visual weight, so nothing indicated what to read first.
+- **"Prototype" is gone.** It was accurate while the repository was private; now it invites a reader to dismiss the tool before looking at it. The header reads *OT Scout · Passive OT/ICS assessment*, with the version as a small chip beside the name — `CONTRIBUTING.md` asks people to quote it when reporting a bug, so it stays visible. The word is also gone from the startup line, the About dialog, the argument parser, the module docstring, the PCAP error and the User-Agent sent to the IEEE registry, which had been pinned at a hardcoded `0.2` for some time and now reports the real version.
+- Loading the demonstration data moved out of the header and into the Engagement panel. It is a data-set switch, the same operation as changing engagement — two buttons side by side doing the same kind of thing, with no relationship between them, was most of why the header read as accreted. The separate DEMO DATA pill goes with it: the engagement chip turns amber and reads *Data set* instead.
+- Capture status and the elapsed timer became one element with a status dot — green while capturing, red on error. The timer is hidden entirely when nothing has run, rather than showing a permanent `0:00`.
+- The Engagement panel closes once you have chosen, instead of leaving you to dismiss it.
+- The standing "Passive by default" banner is gone from every screen. The caveat still reaches the people who need it: `README.md` states it, and the Word report tells the client that missing observations are treated as unknown rather than as proof of absence. On the assessor's own screen it was read once and ignored thereafter.
+- **Clear prototype data** is now **Clear this engagement's data**, and its confirmation names what it deletes. With engagements, "prototype data" was actively misleading — the button removes real work.
 
 ## v0.17.0 — 2026-09-13
 - **Engagements.** One customer, one database — the practice `INSTALL.md` already recommended, now something the tool does rather than something you have to remember. **Engagement** in the header opens a panel that starts a new engagement (names it, creates its own database, switches to it) and lists the existing ones to return to. Nothing is deleted by either action; the engagement you leave is exactly as you left it.

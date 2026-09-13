@@ -5,6 +5,8 @@ import io
 import urllib.request
 from pathlib import Path
 
+from . import __version__
+
 
 IEEE_OUI_URL = "https://standards-oui.ieee.org/oui/oui.csv"
 
@@ -62,7 +64,7 @@ class VendorLookup:
         return self.prefixes.get(compact[:6], "")
 
     def update(self) -> int:
-        request = urllib.request.Request(IEEE_OUI_URL, headers={"User-Agent": "OT-Scout-Prototype/0.2"})
+        request = urllib.request.Request(IEEE_OUI_URL, headers={"User-Agent": f"OT-Scout/{__version__}"})
         with urllib.request.urlopen(request, timeout=45) as response:
             data = response.read(20 * 1024 * 1024 + 1)
         if len(data) > 20 * 1024 * 1024:
