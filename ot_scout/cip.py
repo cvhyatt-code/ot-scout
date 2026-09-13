@@ -25,6 +25,12 @@ GET_ATTRIBUTES_ALL = 0x01
 GET_ATTRIBUTE_SINGLE = 0x0E
 UNCONNECTED_SEND = 0x52
 
+# How many times a request may be unwrapped from an Unconnected_Send before we stop following it.
+# Real CIP routing nests a handful of hops at most; a crafted frame can nest them until the recursion
+# in _request_target exhausts the interpreter stack, and the frames we decode come from a network we
+# do not control.
+MAX_ROUTE_DEPTH = 8
+
 # CIP vendor ids (ODVA-assigned). Only ids that are unambiguous; anything else is reported by number.
 VENDORS = {
     1: "Rockwell Automation / Allen-Bradley", 7: "SMC Corporation", 8: "Molex", 26: "Festo",
@@ -97,9 +103,13 @@ def _cpf_items(data: bytes) -> list[tuple[int, bytes]]:
     return items
 
 
-def _request_target(cip: bytes) -> tuple[int, dict] | None:
-    """(service, path) of a CIP request, unwrapping an Unconnected_Send to its embedded request."""
-    if len(cip) < 2:
+def _request_target(cip: bytes, depth: int = 0) -> tuple[int, dict] | None:
+    """(service, path) of a CIP request, unwrapping an Unconnected_Send to its embedded request.
+
+    depth stops a hostile frame from nesting Unconnected_Send until this recursion exhausts the stack.
+    A RecursionError here would be raised on the parser thread, several layers below anything that
+    expects it, so it is bounded at the source rather than caught somewhere upstream."""
+    if depth > MAX_ROUTE_DEPTH or len(cip) < 2:
         return None
     service, words = cip[0], cip[1]
     if service & 0x80:
@@ -110,7 +120,7 @@ def _request_target(cip: bytes) -> tuple[int, dict] | None:
         if len(body) < 4:
             return None
         size = struct.unpack("<H", body[2:4])[0]
-        return _request_target(body[4:4 + size])
+        return _request_target(body[4:4 + size], depth + 1)
     return service, path
 
 

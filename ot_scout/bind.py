@@ -1,13 +1,21 @@
-"""Where the web interface may listen.
+"""Where the web interface may listen, and which requests it will answer.
 
 OT Scout's HTTP interface has no authentication: every endpoint is open to whoever can reach the
 port, including evidence export, database reset and the Scout Assist model settings (which hold an
 API key). That is a reasonable shape for a tool bound to loopback on the assessor's own laptop, and
 an unreasonable one anywhere else — so a non-loopback bind has to be asked for explicitly.
+
+Binding loopback keeps other machines out. It does not keep out the assessor's own browser acting
+on someone else's instructions, which is what the Host and Origin checks below are for.
 """
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 LOOPBACK_NAMES = {"localhost", "::1", "0:0:0:0:0:0:0:1"}
+
+# Names a browser may legitimately use to reach a loopback bind.
+LOOPBACK_HOST_HEADERS = frozenset({"127.0.0.1", "localhost", "[::1]", "::1"})
 
 TUNNELS = """Reach a remote collector through something that authenticates, instead:
   ssh -L 8080:localhost:8080 user@collector     # then browse http://127.0.0.1:8080
@@ -30,6 +38,53 @@ def bind_refusal(host: str, insecure: bool) -> str | None:
             f"evidence export, database reset and the Scout Assist API key to anyone who can reach the port.\n\n"
             f"{TUNNELS}\n\n"
             f"If you have read that and still mean it, add --insecure-bind.")
+
+
+def allowed_hosts(host: str) -> frozenset[str] | None:
+    """Host header values this server will answer to, or None to accept anything.
+
+    Binding 127.0.0.1 stops other machines connecting. It does not stop a page on the internet from
+    pointing a hostname it owns at 127.0.0.1 and having the assessor's own browser fetch from us —
+    DNS rebinding. The browser treats the response as belonging to that hostname, so the attacker's
+    script can read it: the whole evidence export, from a server that never saw a foreign packet.
+    The name the user typed only survives in the Host header, so refusing an unexpected one is the
+    only defence a server without authentication has.
+
+    A deliberate --insecure-bind is reached by names we cannot enumerate (a tailnet name, a LAN
+    hostname, a reverse proxy), so it accepts anything and relies on the startup banner instead.
+    """
+    if not is_loopback(host):
+        return None
+    return LOOPBACK_HOST_HEADERS | {(host or "").strip().lower()}
+
+
+def host_header_ok(value: str | None, allowed: frozenset[str] | None) -> bool:
+    """True if a request carrying this Host header may be answered."""
+    if allowed is None:
+        return True
+    if not value:
+        return False
+    name = value.strip().lower()
+    if name.startswith("["):                       # [::1]:8080
+        name = name.partition("]")[0] + "]"
+    elif name.count(":") == 1:                     # host:port, but not a bare IPv6 literal
+        name = name.rsplit(":", 1)[0]
+    return name in allowed
+
+
+def origin_ok(value: str | None, allowed: frozenset[str] | None) -> bool:
+    """True if a state-changing request carrying this Origin may proceed.
+
+    No Origin means no browser: curl, a script, the CLI. Those carry no ambient authority for a page
+    elsewhere to borrow, and refusing them would break every non-browser client for no gain. An
+    Origin that is present and foreign is a page somewhere else spending the assessor's access —
+    resetting the database, overwriting the model API key, starting a capture.
+    """
+    if allowed is None or value is None:
+        return True
+    if value == "null":                            # sandboxed iframe, data: document, file://
+        return False
+    return host_header_ok(urlparse(value).netloc, allowed)
 
 
 def exposure_banner(host: str, port: int) -> str:

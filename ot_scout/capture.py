@@ -162,6 +162,7 @@ class CaptureManager:
         self.kernel_seen = 0      # frames the kernel counted for the socket (read + dropped)
         self.parsed = 0           # frames the parser thread has processed
         self.unparsed = 0         # frames written to the PCAP but skipped by the live parser (queue full)
+        self.malformed = 0        # frames the decoder raised on; in the PCAP, absent from the live inventory
         self.rcvbuf = 0           # receive buffer the kernel actually granted, bytes
         self.queue = None
 
@@ -191,7 +192,7 @@ class CaptureManager:
         self.rate_limit = rate_limit or None
         self.save_pcap = bool(save_pcap)
         self.pcap_path = ""
-        self.frames = self.dropped = self.kernel_seen = self.parsed = self.unparsed = 0
+        self.frames = self.dropped = self.kernel_seen = self.parsed = self.unparsed = self.malformed = 0
         self.stop_event.clear()
         self.session_id = self.store.begin_session(assessment, site, point, interface, "live", access_method)
         if self.save_pcap:
@@ -267,10 +268,26 @@ class CaptureManager:
             if writer:
                 writer.close()
             if parser is not None:
-                self.queue.put(None)          # sentinel: parse what is queued, then finish the session
+                self._hand_over_sentinel(parser)
                 parser.join()
             elif self.session_id:
                 self.store.end_session(self.session_id, dropped=self.dropped, frames=self.frames)
+
+    def _hand_over_sentinel(self, parser) -> bool:
+        """Tell the parser thread to finish, without ever blocking the reader. True if it was told.
+
+        The sentinel goes through the same bounded queue as the frames, and a busy capture stops with
+        that queue full — so a bare put() waits for space. That is fine while the parser is draining
+        and fatal when it is not: if the parser thread has died, nothing will ever make space, the
+        reader blocks here forever, and the capture stays "running" until the process is killed.
+        Waiting in short slices lets us notice a parser that is no longer there."""
+        while parser.is_alive():
+            try:
+                self.queue.put(None, timeout=0.2)
+                return True
+            except queue.Full:
+                continue
+        return False
 
     def _parse_loop(self):
         """Parser thread: drain the queue into batched SQLite writes. Keeps going after the reader stops until
@@ -288,7 +305,15 @@ class CaptureManager:
                     break
                 if item is not False:
                     frame, ts = item
-                    obs = parse_ethernet(frame, ts)
+                    try:
+                        obs = parse_ethernet(frame, ts)
+                    except Exception:
+                        # Every byte here was chosen by whoever is on the monitored network. One frame the
+                        # decoder cannot survive must cost that frame and nothing else: an exception escaping
+                        # this loop kills the parser thread, and a dead parser thread wedges the reader on the
+                        # stop sentinel. The frame is still in the PCAP and is still counted.
+                        self.malformed += 1
+                        obs = None
                     if obs:
                         batch.append(obs)
                     self.parsed += 1
@@ -348,7 +373,8 @@ class CaptureManager:
                 "error": self.error, "started_at": self.started_at, "stopped_at": self.stopped_at,
                 "elapsed_seconds": self.elapsed_seconds(), "rate_limit": self.rate_limit,
                 "frames": self.frames, "dropped": self.dropped, "pcap_path": self.pcap_path, "save_pcap": self.save_pcap,
-                "parsed": self.parsed, "unparsed": self.unparsed, "queued": self.queue.qsize() if self.queue else 0,
+                "parsed": self.parsed, "unparsed": self.unparsed, "malformed": self.malformed,
+                "queued": self.queue.qsize() if self.queue else 0,
                 "finishing": self.finishing, "rcvbuf": self.rcvbuf}
 
     def import_pcap(self, data: bytes, assessment: str, site: str, point: str, filename: str, rate_limit: int | None = None) -> dict:

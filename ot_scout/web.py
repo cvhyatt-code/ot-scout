@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
+from .bind import allowed_hosts, host_header_ok, origin_ok
 from .capture import interfaces
 from .copilot_service import CopilotService
 from .frameworks import catalogue
@@ -44,6 +45,7 @@ class AppServer(ThreadingHTTPServer):
         super().__init__(address, handler)
         self.store = store
         self.capture = capture
+        self.allowed_hosts = allowed_hosts(address[0])
         self.quiet_status = True
         self.main_database = store.path
         self.demo_database = str(Path(store.path).parent / "demo.db")
@@ -110,7 +112,24 @@ class Handler(BaseHTTPRequestHandler):
     def _json_body(self):
         return json.loads(self._body().decode("utf-8") or "{}")
 
+    def _permitted(self) -> bool:
+        """Refuse requests the assessor's browser was talked into making by someone else.
+
+        There is no login to check, so these two headers are the whole boundary: Host says which name
+        the browser thinks it is talking to, and Origin says which page asked. Anything that has
+        arrived by a route we do not recognise is refused before it reaches a handler."""
+        allowed = getattr(self.server, "allowed_hosts", None)
+        if not host_header_ok(self.headers.get("Host"), allowed):
+            self._json({"ok": False, "error": "Unrecognised Host header — refused."}, status=421)
+            return False
+        if self.command != "GET" and not origin_ok(self.headers.get("Origin"), allowed):
+            self._json({"ok": False, "error": "Cross-origin request refused."}, status=403)
+            return False
+        return True
+
     def do_GET(self):
+        if not self._permitted():
+            return
         path = urlparse(self.path).path
         if path == "/api/status":
             store = self.server.store
@@ -254,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw))); self.end_headers(); self.wfile.write(raw)
 
     def do_POST(self):
+        if not self._permitted():
+            return
         path = urlparse(self.path).path
         try:
             if path == "/api/start":

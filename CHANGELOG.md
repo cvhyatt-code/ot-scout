@@ -2,6 +2,14 @@
 
 All notable changes to the passive assessment prototype. Versions are shown in the page header, browser tab and the startup line printed by `run.py`.
 
+## v0.16.0 — 2026-09-13
+- A frame the decoder cannot handle now costs that frame and nothing else. Every byte OT Scout parses was chosen by whoever is on the monitored network, or by whoever wrote the PCAP someone handed you, and an exception escaping the decode call killed the parser thread — which then wedged the reader thread on the stop sentinel, leaving the capture permanently "running" until the process was killed. The decode call is wrapped, the frame is counted as `malformed` and stays in the raw PCAP, and the capture carries on.
+- CIP `Unconnected_Send` unwrapping is bounded at 8 hops (`MAX_ROUTE_DEPTH`). Real routing nests a few; a crafted request could nest thousands, and the recursion that follows the embedded request ran until the interpreter stack gave out. A 20 KB frame was enough — trivially so from an imported PCAP, which `SECURITY.md` already treats as attacker-controlled.
+- Stopping a capture no longer depends on the parser thread still being alive. The stop sentinel went through the same bounded queue as the frames, so a busy capture — the exact case where the queue is full — blocked the reader until the parser made room. If the parser was gone, that wait never ended.
+- The web interface refuses requests carrying an unrecognised `Host` header (421) and state-changing requests carrying a foreign `Origin` (403). Binding loopback keeps other machines out; it does nothing about a page on the internet pointing a hostname it owns at 127.0.0.1 so the assessor's own browser fetches the evidence export and reads it back as same-origin, or simply POSTing to `/api/reset`. With no authentication to check, these two headers are the whole boundary. Requests with no `Origin` at all — curl, scripts, `copilot.py` — are unaffected, and `--insecure-bind` still answers to any name.
+- Capture status reports a `malformed` count alongside `dropped` and `unparsed`.
+- New `tests/test_hostile_input.py` (17 tests). Suite is now 119.
+
 ## v0.15.1 — 2026-09-13
 - The About dialog now carries the licence notice: copyright, that the tool comes with absolutely no warranty, that it is free software under the GNU Affero General Public License v3 or later and may be redistributed under those terms, and a link to the source. AGPL section 0 asks an interactive interface to display those, and section 13 wants anyone who reaches a modified version over a network to be able to get the source; the About dialog is the place for both.
 

@@ -87,6 +87,7 @@ That split means **two different counters can climb, and they mean opposite thin
 |---|---|---|
 | **Dropped** | The kernel discarded frames because the receive buffer filled. Those frames are gone for good. | Narrow the SPAN to fewer source ports or VLANs. Failing that, capture with `dumpcap -B 512` and import the file afterwards. Failing that, better hardware. |
 | **Unparsed** | The parser fell behind and the queue (300,000 frames) filled. The frames are safe in the raw PCAP — they simply weren't parsed live. | Nothing urgent. Re-import that session's PCAP afterwards to pick them up. |
+| **Malformed** | The decoder raised on the frame and OT Scout skipped it rather than letting one frame stop the capture. The frame is in the raw PCAP. | Normally nothing — truncated or corrupt frames happen. A steady stream of them on one segment is worth a look at the PCAP in Wireshark. |
 
 Dropped frames make the inventory for that session incomplete in a way nobody can quantify, which is why the report raises an amber callout in the coverage section when any session dropped frames. Unparsed frames are recoverable, so they don't.
 
