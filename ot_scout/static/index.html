@@ -16,9 +16,9 @@
 
 <div class="tab" data-pane="collect">
 <section class="panel"><div class="control">
- <div><label>Assessment</label><input id="assessment" value="Home Network Prototype"></div>
- <div><label>Site</label><input id="site" value="Home"></div>
- <div><label>Collection point</label><input id="point" value="Linux Mint Ethernet"></div>
+ <div><label>Assessment</label><input id="assessment" placeholder="e.g. Riverbend WTP — OT assessment"></div>
+ <div><label>Site</label><input id="site" placeholder="e.g. Main WTP"></div>
+ <div><label>Collection point</label><input id="point" placeholder="e.g. Control room core switch SPAN"></div>
  <div><label>Access method</label><select id="access"><option>Unconfirmed access port</option><option>Configured SPAN/mirror</option><option>Network TAP</option></select></div>
  <div><label>Capture interface</label><select id="iface"></select></div>
  <div><label>Throttle</label><select id="throttle" title="Caps how fast the tool reads and processes already-mirrored traffic. It never touches the wire — capture is read-only either way — but a lower cap eases load on a constrained collection laptop or a fragile SPAN setup."><option value="0">Unlimited</option><option value="50">50 pkt/s — very delicate networks</option><option value="200">200 pkt/s</option><option value="1000">1,000 pkt/s</option></select></div>

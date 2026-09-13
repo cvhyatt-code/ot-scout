@@ -1102,3 +1102,28 @@ class ExposureTests(unittest.TestCase):
             doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
             for text in ("Assets to address first", "Fleet view by manufacturer and model", "IEC 62443 requirements addressed by the findings", "SR 4.1"):
                 self.assertIn(text, doc)
+
+
+class AddressScopeTests(unittest.TestCase):
+    """Which addresses count as "the site" and which count as somewhere else."""
+
+    def test_site_addresses_are_local(self):
+        from ot_scout.store import private_or_local_ip
+        for value in ("10.20.3.11", "172.16.5.22", "192.168.1.10", "169.254.4.4", "fe80::1", "fd00::1"):
+            self.assertTrue(private_or_local_ip(value), value)
+
+    def test_routable_addresses_are_not_local(self):
+        from ot_scout.store import private_or_local_ip
+        for value in ("8.8.8.8", "100.64.0.9"):
+            self.assertFalse(private_or_local_ip(value), value)
+
+    def test_documentation_ranges_are_treated_as_outside(self):
+        """Python calls RFC 5737 space private. An assessment should not: it is not the plant, and the
+        demo data set uses it precisely because no real organisation can be pointed at."""
+        from ot_scout.store import private_or_local_ip
+        for value in ("192.0.2.9", "198.51.100.9", "203.0.113.9", "203.0.113.34", "2001:db8::1"):
+            self.assertFalse(private_or_local_ip(value), value)
+
+    def test_nonsense_is_not_local(self):
+        from ot_scout.store import private_or_local_ip
+        self.assertFalse(private_or_local_ip("not-an-address"))

@@ -88,12 +88,23 @@ def broadcast_or_multicast_ip(value: str) -> bool:
         return False
 
 
+# RFC 5737 and RFC 3849. Python counts these as private, because they are not globally routable.
+# For an assessment the question is a different one — is this address part of the site? — and these
+# are not: they should never appear on a plant network, so a controller talking to one is an anomaly
+# worth surfacing rather than a row quietly filed as "Unmapped local".
+DOCUMENTATION_NETS = tuple(ipaddress.ip_network(n) for n in
+                           ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32"))
+
+
 def private_or_local_ip(value: str) -> bool:
+    """True if this address belongs to the site's own network rather than somewhere outside it."""
     try:
         ip = ipaddress.ip_address(value)
-        return ip.is_private or ip.is_link_local
     except ValueError:
         return False
+    if any(ip in net for net in DOCUMENTATION_NETS):
+        return False
+    return ip.is_private or ip.is_link_local
 
 
 class Store:
