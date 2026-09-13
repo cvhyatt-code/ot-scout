@@ -5,53 +5,55 @@ references it most directly bears on. The mapping is deliberately conservative: 
 gets the 62443 requirement it leaves unverified, but no ATT&CK technique — a missing SPAN port is
 not an adversary behaviour. Assessors can add or remove references on any finding in the register.
 
-IEC 62443-3-3 system requirements are cited as "SR x.y"; the two programme-level items that have no
-3-3 equivalent (patching, backup/restore as a service capability) cite IEC 62443-2-4 practices.
+IEC 62443-3-3 system requirements are cited as "SR x.y"; the programme-level items that have no 3-3
+equivalent (patching, backup/restore as a service capability) cite IEC 62443-2-4 practices. The
+identifiers are the citation; the short names beside them are this project's own plain-English
+paraphrases, not the standard's clause titles. Refer to the standard itself for the normative text.
 """
 
 IEC62443 = {
-    # FR 1 — Identification and authentication control
-    "SR 1.1": "Human user identification and authentication",
-    "SR 1.2": "Software process and device identification and authentication",
-    "SR 1.3": "Account management",
-    "SR 1.5": "Authenticator management",
-    "SR 1.6": "Wireless access management",
-    "SR 1.7": "Strength of password-based authentication",
-    "SR 1.13": "Access via untrusted networks",
-    # FR 2 — Use control
-    "SR 2.1": "Authorization enforcement",
-    "SR 2.2": "Wireless use control",
-    "SR 2.3": "Use control for portable and mobile devices",
-    "SR 2.6": "Remote session termination",
-    "SR 2.8": "Auditable events",
-    # FR 3 — System integrity
-    "SR 3.1": "Communication integrity",
-    "SR 3.2": "Malicious code protection",
-    "SR 3.4": "Software and information integrity",
-    "SR 3.8": "Session integrity",
-    # FR 4 — Data confidentiality
-    "SR 4.1": "Information confidentiality",
-    "SR 4.3": "Use of cryptography",
-    # FR 5 — Restricted data flow
-    "SR 5.1": "Network segmentation",
-    "SR 5.2": "Zone boundary protection",
-    "SR 5.3": "General purpose person-to-person communication restrictions",
-    "SR 5.4": "Application partitioning",
-    # FR 6 — Timely response to events
-    "SR 6.1": "Audit log accessibility",
-    "SR 6.2": "Continuous monitoring",
-    # FR 7 — Resource availability
-    "SR 7.1": "Denial of service protection",
-    "SR 7.3": "Control system backup",
-    "SR 7.4": "Control system recovery and reconstitution",
-    "SR 7.6": "Network and security configuration settings",
-    "SR 7.7": "Least functionality",
-    "SR 7.8": "Control system component inventory",
+    # FR 1 — identification and authentication control
+    "SR 1.1": "Users are identified and authenticated",
+    "SR 1.2": "Devices and software processes are identified and authenticated",
+    "SR 1.3": "Accounts are managed across their lifecycle",
+    "SR 1.5": "Credentials and keys are managed",
+    "SR 1.6": "Wireless access is controlled",
+    "SR 1.7": "Passwords meet a defined strength",
+    "SR 1.13": "Access from untrusted networks is controlled",
+    # FR 2 — use control
+    "SR 2.1": "Permissions are enforced per user and role",
+    "SR 2.2": "Wireless use is limited to approved purposes",
+    "SR 2.3": "Portable and mobile devices are controlled",
+    "SR 2.6": "Idle remote sessions are terminated",
+    "SR 2.8": "Security-relevant events are recorded",
+    # FR 3 — system integrity
+    "SR 3.1": "Traffic is protected against tampering in transit",
+    "SR 3.2": "Protection against malicious code",
+    "SR 3.4": "Software and configuration integrity is verified",
+    "SR 3.8": "Sessions are protected against hijacking",
+    # FR 4 — data confidentiality
+    "SR 4.1": "Sensitive information is protected from disclosure",
+    "SR 4.3": "Cryptography is applied and managed properly",
+    # FR 5 — restricted data flow
+    "SR 5.1": "The network is divided into zones",
+    "SR 5.2": "Traffic crossing a zone boundary is controlled",
+    "SR 5.3": "General-purpose messaging is restricted in control zones",
+    "SR 5.4": "Applications are kept in separate partitions",
+    # FR 6 — timely response to events
+    "SR 6.1": "Audit records are available for review",
+    "SR 6.2": "The environment is monitored continuously",
+    # FR 7 — resource availability
+    "SR 7.1": "Resistance to denial-of-service conditions",
+    "SR 7.3": "Control-system configuration is backed up",
+    "SR 7.4": "The control system can be restored after failure",
+    "SR 7.6": "Network and security settings match a known baseline",
+    "SR 7.7": "Only required functions and services are enabled",
+    "SR 7.8": "A component inventory is maintained",
     # IEC 62443-2-4 service-provider practices (programme level)
-    "2-4 SP.06": "Configuration management",
-    "2-4 SP.07": "Remote access",
-    "2-4 SP.11": "Patch management",
-    "2-4 SP.12": "Backup / restore",
+    "2-4 SP.06": "Service-provider configuration management",
+    "2-4 SP.07": "Controlled remote access by the service provider",
+    "2-4 SP.11": "Patches are assessed and applied",
+    "2-4 SP.12": "Backup and restore capability",
 }
 
 ATTACK_ICS = {
@@ -98,7 +100,7 @@ DRAFT_MAPPING = {
 
 
 def describe(ref: str) -> str:
-    """'SR 5.1' -> 'SR 5.1 Network segmentation'; unknown ids pass through unchanged."""
+    """'SR 5.1' -> 'SR 5.1 The network is divided into zones'; unknown ids pass through unchanged."""
     ref = ref.strip()
     name = IEC62443.get(ref) or ATTACK_ICS.get(ref)
     return f"{ref} {name}" if name else ref

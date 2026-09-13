@@ -746,10 +746,10 @@ class FrameworkReferenceTests(unittest.TestCase):
                 self.assertIn(ref, frameworks.IEC62443, ref)
             for ref in attack:
                 self.assertIn(ref, frameworks.ATTACK_ICS, ref)
-        self.assertEqual(frameworks.describe("SR 5.1"), "SR 5.1 Network segmentation")
+        self.assertEqual(frameworks.describe("SR 5.1"), "SR 5.1 The network is divided into zones")
         self.assertEqual(frameworks.describe("SR 99.9"), "SR 99.9")
         refs = frameworks.refs_for("Direct OT-to-enterprise communications bypass the industrial DMZ")
-        self.assertIn("SR 5.2 Zone boundary protection", refs["iec62443"])
+        self.assertIn("SR 5.2 Traffic crossing a zone boundary is controlled", refs["iec62443"])
         self.assertIn("T0886 Remote Services", refs["attack"])
 
     def test_references_survive_register_import_and_reach_the_report(self):
@@ -758,9 +758,9 @@ class FrameworkReferenceTests(unittest.TestCase):
         from ot_scout.report import Analysis, build_report, collect
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(str(Path(tmp) / "t.db"))
-            store.save_finding({"title": "Manual", "kind": "Control deficiency", "iec62443": "SR 5.1 Network segmentation", "attack": "T0886 Remote Services"})
+            store.save_finding({"title": "Manual", "kind": "Control deficiency", "iec62443": "SR 5.1 The network is divided into zones", "attack": "T0886 Remote Services"})
             f = store.findings()[0]
-            self.assertEqual(f["iec62443"], "SR 5.1 Network segmentation")
+            self.assertEqual(f["iec62443"], "SR 5.1 The network is divided into zones")
             self.assertEqual(f["attack"], "T0886 Remote Services")
             # migration: an old database without the columns gains them on open
             import sqlite3
@@ -786,7 +786,7 @@ class FrameworkReferenceTests(unittest.TestCase):
             self.assertTrue(any(f["iec62443"] for f in imported))
             doc = zipfile.ZipFile(io.BytesIO(build_report(collect(store), {}))).read("word/document.xml").decode()
             self.assertIn("Framework references", doc)
-            self.assertIn("SR 5.1 Network segmentation", doc)
+            self.assertIn("SR 5.1 The network is divided into zones", doc)
 
 
 def _ua_string(s):
