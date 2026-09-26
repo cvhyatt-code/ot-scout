@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Pinned: ruff's default rules change between releases. Bump deliberately, with ruff.toml.
+  RUFF_VERSION: "0.15.8"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff ${{ env.RUFF_VERSION }}
+        run: python3 -m pip install "ruff==${RUFF_VERSION}"
+      - name: Tests
+        id: tests
+        run: python3 -m unittest discover -s tests
+      - name: Lint
+        # Runs even when the tests fail, so one run reports both.
+        if: ${{ !cancelled() }}
+        run: |
+          ruff --version
+          ruff check --show-settings run.py | grep -m1 "^Settings path"
+          ruff check --config ruff.toml .

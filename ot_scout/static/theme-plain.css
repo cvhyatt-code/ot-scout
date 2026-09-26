@@ -1,0 +1,9 @@
+/* Plain theme: neutral greys and one blue, nothing that reads as a brand. */
+:root{--ink:#1f2328;--muted:#656d76;--line:#d0d7de;--panel:#fff;--bg:#f6f8fa;--blue:#0969da}
+header{background:#24292f}
+header h1 .ver{color:#b1bac4;border-color:#57606a}
+.tagline{color:#b1bac4}
+.hsep{background:#57606a}
+.ctxchip{background:#32383f;border-color:#57606a}
+.ctxchip .k,.ctxchip .chev{color:#b1bac4}
+.cstate{color:#d0d7de}
